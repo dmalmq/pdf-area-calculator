@@ -1,0 +1,77 @@
+import type { PDFDocumentProxy } from 'pdfjs-dist'
+
+export type Pt = { x: number; y: number } // PDF user-space points, bottom-left origin
+
+export type ScaleMode =
+  | { kind: 'ratio'; n: number } // 1:n → mmPerPt = (25.4/72) * n
+  | { kind: 'calibration'; a: Pt; b: Pt; realMeters: number } // mmPerPt = realMeters*1000 / dist(a,b)
+  | { kind: 'custom'; mmPerPt: number }
+
+export type Tool = 'draw' | 'edit' | 'pan'
+
+export interface PageState {
+  pageIndex: number // 0-based
+  label: string // default `Page ${i+1}`, user-editable (e.g. "1F")
+  scale: ScaleMode | null // null = unscaled
+}
+
+export interface Area {
+  id: string // crypto.randomUUID()
+  pageIndex: number
+  name: string // business name, trimmed
+  polygon: Pt[] // vertices in PDF pt space (resolution-independent)
+}
+
+export interface ReportRow {
+  name: string
+  scaledM2: number // sum over scaled pages
+  unscaledPt2: number // sum over unscaled pages (0 if none)
+  count: number // polygon count
+}
+
+export interface ProjectFile {
+  version: 1
+  fileName: string | null
+  pdfPath?: string | null
+  pages: PageState[]
+  areas: Area[]
+  names: string[]
+  colors?: Record<string, string>
+}
+
+export interface PdfOpenResult {
+  path: string
+  bytes: Uint8Array
+}
+
+export interface AppApi {
+  openPdf(): Promise<PdfOpenResult | null>
+  openPdfPath(path: string): Promise<PdfOpenResult | null>
+  savePdf(bytes: Uint8Array, defaultName: string): Promise<string | null>
+  openProject(): Promise<ProjectFile | null>
+  saveProject(project: ProjectFile, defaultName: string): Promise<string | null>
+}
+
+export interface AppState {
+  pdfDoc: PDFDocumentProxy | null
+  fileName: string | null
+  pdfPath: string | null
+  originalBytes: Uint8Array | null
+  pages: PageState[]
+  areas: Area[]
+  names: string[]
+  colors: Record<string, string>
+  activeName: string | null
+  activePageIndex: number
+  tool: Tool
+  selectedAreaId: string | null
+  calibrating: boolean
+  zoom: number
+  pan: Pt
+}
+
+declare global {
+  interface Window {
+    api: AppApi
+  }
+}
