@@ -148,4 +148,47 @@ describe('area store', () => {
     // page 1 has one area 'B'
     expect(store.getState().copyActivePage()).toBe(1)
   })
+
+  it('pastes clipboard areas onto the active page with fresh ids and selection', () => {
+    const a = square(0, 'A')
+    const store = createAreaStore({ pages, names: ['A'], areas: [a], selectedAreaId: a.id })
+    store.getState().copySelectedArea()
+
+    store.getState().setActivePage(1)
+    expect(store.getState().pasteClipboard()).toBe(1)
+
+    const pasted = store.getState().areas.find((area) => area.pageIndex === 1 && area.name === 'A')
+    expect(pasted).toBeTruthy()
+    expect(pasted!.id).not.toBe(a.id)
+    expect(pasted!.polygon).toEqual(a.polygon)
+    expect(store.getState().selectedAreaId).toBe(pasted!.id)
+
+    // pasted polygon is an independent clone
+    store.getState().setAreaPolygon(pasted!.id, [{ x: 99, y: 99 }, { x: 1, y: 0 }, { x: 0, y: 1 }])
+    expect(store.getState().clipboard[0].polygon).toEqual(a.polygon)
+    expect(store.getState().areas.find((area) => area.id === a.id)!.polygon).toEqual(a.polygon)
+  })
+
+  it('registers pasted names and returns 0 on empty clipboard', () => {
+    const store = createAreaStore({ pages, names: [], areas: [], activePageIndex: 0 })
+    expect(store.getState().pasteClipboard()).toBe(0)
+
+    store.getState().importProject({ pages, names: ['X'], areas: [square(0, 'X')] })
+    store.getState().copyActivePage()
+    store.getState().pasteClipboard()
+    expect(store.getState().names).toContain('X')
+    expect(colorForBusiness(store.getState(), 'X')).toMatch(/^#[0-9a-f]{6}$/i)
+  })
+
+  it('setAreaPolygon replaces the target polygon and ignores unknown ids', () => {
+    const a = square(0, 'A')
+    const store = createAreaStore({ pages, names: ['A'], areas: [a] })
+    const next = [{ x: 1, y: 1 }, { x: 2, y: 1 }, { x: 2, y: 2 }]
+
+    store.getState().setAreaPolygon(a.id, next)
+    expect(store.getState().areas[0].polygon).toEqual(next)
+
+    store.getState().setAreaPolygon('missing', [{ x: 0, y: 0 }])
+    expect(store.getState().areas[0].polygon).toEqual(next)
+  })
 })

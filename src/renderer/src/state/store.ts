@@ -37,6 +37,8 @@ export interface AreaStore extends AppState {
   }): void
   copySelectedArea(): number
   copyActivePage(): number
+  pasteClipboard(): number
+  setAreaPolygon(id: string, polygon: Pt[]): void
 }
 
 const initialState: AppState = {
@@ -310,6 +312,37 @@ export function createAreaStore(initial?: Partial<AppState>): StoreApi<AreaStore
       const copied: CopiedArea[] = onPage.map((area) => ({ name: area.name, polygon: area.polygon.map((pt) => ({ ...pt })) }))
       set({ clipboard: copied })
       return onPage.length
+    },
+
+    pasteClipboard() {
+      const state = get()
+      if (state.clipboard.length === 0) return 0
+      const pageIndex = state.activePageIndex
+      const pasted: Area[] = state.clipboard.map((copied) => ({
+        id: crypto.randomUUID(),
+        pageIndex,
+        name: copied.name,
+        polygon: copied.polygon.map((pt) => ({ ...pt }))
+      }))
+      let names = state.names
+      let colors = state.colors
+      for (const area of pasted) {
+        names = withName(names, area.name)
+        colors = withNameColor(colors, area.name)
+      }
+      set({
+        areas: [...state.areas, ...pasted],
+        names,
+        colors,
+        selectedAreaId: pasted[pasted.length - 1].id
+      })
+      return pasted.length
+    },
+
+    setAreaPolygon(id, polygon) {
+      set((state) => ({
+        areas: state.areas.map((area) => (area.id === id ? { ...area, polygon } : area))
+      }))
     }
   }))
 }
