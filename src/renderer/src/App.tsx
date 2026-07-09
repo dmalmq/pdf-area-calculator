@@ -6,7 +6,7 @@ import { Sidebar } from './components/Sidebar'
 import { Toolbar } from './components/Toolbar'
 import { buildReportPdf } from './report/buildReport'
 import { renderReportPng } from './report/reportImage'
-import { areaStore, mmPerPtFor, useAreaStore } from './state/store'
+import { areaStore, facilitiesOnPage, mmPerPtFor, useAreaStore } from './state/store'
 import type { ProjectFile, Pt, Tool } from './state/types'
 
 const shortcutRows = [
@@ -136,7 +136,11 @@ function App(): React.JSX.Element {
     }
     const title = `面積集計 — ${state.fileName ?? 'PDF'}`
     const png = await renderReportPng(state, title)
-    const pdf = await buildReportPdf(state.originalBytes, png, state.areas, state.colors)
+    const pdf = await buildReportPdf(state.originalBytes, png, state.areas, state.colors, {
+      visible: state.legendVisible,
+      pos: state.legendPos,
+      entriesForPage: (pageIndex) => facilitiesOnPage(state, pageIndex)
+    })
     const defaultName = `${withoutExt(state.fileName ?? 'pdf')}_areas.pdf`
     const saved = await window.api.savePdf(pdf, defaultName)
     if (saved) showToast(`Report saved to ${baseName(saved)}`)
