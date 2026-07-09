@@ -12,6 +12,7 @@ import type {
   CopiedArea,
   FacilityLevelRow,
   FacilityRow,
+  LegendEntry,
   LevelRow,
   PageState,
   Pt,
@@ -58,6 +59,8 @@ export interface AreaStore extends AppState {
   setDrawKind(kind: AreaKind): void
   setFacilityPrefix(name: string, prefix: string): void
   setStoreCode(id: string, code: string): void
+  setLegendPos(pos: Pt): void
+  setLegendVisible(visible: boolean): void
 }
 
 const initialState: AppState = {
@@ -260,6 +263,15 @@ export function reportByFacilityLevel(state: ReportState): FacilityLevelRow[] {
   return rows.sort(
     (a, b) => a.name.localeCompare(b.name) || order.indexOf(a.level) - order.indexOf(b.level)
   )
+}
+
+export function facilitiesOnPage(
+  state: Pick<AppState, 'areas' | 'names' | 'colors'>,
+  pageIndex: number
+): LegendEntry[] {
+  return state.names
+    .filter((name) => state.areas.some((area) => area.pageIndex === pageIndex && area.name.trim() === name))
+    .map((name) => ({ name, color: colorForBusiness(state, name) }))
 }
 
 export function nextStoreCode(
@@ -544,6 +556,14 @@ export function createAreaStore(initial?: Partial<AppState>): StoreApi<AreaStore
           area.id === id && area.kind === 'store' ? { ...area, code: code.trim() } : area
         )
       }))
+    },
+
+    setLegendPos(pos) {
+      set({ legendPos: pos })
+    },
+
+    setLegendVisible(visible) {
+      set({ legendVisible: visible })
     }
   }))
 }

@@ -4,6 +4,7 @@ import {
   aggregate,
   colorForBusiness,
   createAreaStore,
+  facilitiesOnPage,
   nextStoreCode,
   reportByFacility,
   reportByFacilityLevel,
@@ -416,5 +417,25 @@ describe('area store', () => {
     const aFac = reportByFacility(store.getState()).find((r) => r.name === 'A')!
     expect(aFac.areaM2).toBe(0)
     expect(aFac.unscaledPt2).toBeCloseTo(100)
+  })
+
+  it('lists facilities on a page (any area) and legend state actions', () => {
+    const store = createAreaStore({
+      pages,
+      names: ['A', 'B'],
+      areas: [
+        square(0, 'A'), // facility on page 0
+        { id: 's', pageIndex: 0, kind: 'store', name: 'B', code: 'b001', polygon: [] } // only a store for B on page 0
+      ]
+    })
+    const entries = facilitiesOnPage(store.getState(), 0)
+    expect(entries.map((e) => e.name)).toEqual(['A', 'B'])
+    expect(entries[0].color).toMatch(/^#[0-9a-f]{6}$/i)
+    expect(facilitiesOnPage(store.getState(), 1)).toEqual([])
+
+    store.getState().setLegendPos({ x: 5, y: 9 })
+    expect(store.getState().legendPos).toEqual({ x: 5, y: 9 })
+    store.getState().setLegendVisible(false)
+    expect(store.getState().legendVisible).toBe(false)
   })
 })

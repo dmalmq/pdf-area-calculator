@@ -57,6 +57,11 @@ export interface FacilityLevelRow {
   stores: number
 }
 
+export interface LegendEntry {
+  name: string
+  color: string
+}
+
 export interface CopiedArea {
   kind: AreaKind
   name: string
