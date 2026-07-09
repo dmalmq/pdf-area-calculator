@@ -323,4 +323,61 @@ describe('area store', () => {
     expect(tekuteB1.stores).toBe(1)
     expect(tekuteB1.areaM2).toBeCloseTo(0.01)
   })
+
+  it('keeps facility×level rows distinct when name+level would collide as one string', () => {
+    // "Food Court" + "B1"  vs  "Food" + "Court B1" both concatenate to
+    // "Food Court B1" under a naive `${name} ${level}` key — they must stay separate.
+    const store = createAreaStore({
+      pages: [
+        { pageIndex: 0, label: 'B1', scale: { kind: 'custom', mmPerPt: 10 } },
+        { pageIndex: 1, label: 'Court B1', scale: { kind: 'custom', mmPerPt: 10 } }
+      ],
+      names: ['Food Court', 'Food'],
+      areas: [square(0, 'Food Court'), square(1, 'Food')]
+    })
+
+    const rows = reportByFacilityLevel(store.getState())
+    const a = rows.filter((r) => r.name === 'Food Court' && r.level === 'B1')
+    const b = rows.filter((r) => r.name === 'Food' && r.level === 'Court B1')
+    expect(a).toHaveLength(1)
+    expect(b).toHaveLength(1)
+    expect(a[0].areaM2).toBeCloseTo(0.01)
+    expect(b[0].areaM2).toBeCloseTo(0.01)
+  })
+
+  it('a facility present on a level only via a store does not inflate the level facility count', () => {
+    const store = createAreaStore({
+      pages: [{ pageIndex: 0, label: '1F', scale: { kind: 'custom', mmPerPt: 10 } }],
+      names: ['A', 'B'],
+      areas: [
+        square(0, 'A'), // A has a facility polygon on 1F
+        { id: 's', pageIndex: 0, kind: 'store', name: 'B', code: 'b001', polygon: [] } // B only a store on 1F
+      ]
+    })
+
+    const oneF = reportByLevel(store.getState()).find((r) => r.level === '1F')!
+    expect(oneF.facilities).toBe(1) // only A has a facility polygon; B's store must not count
+    expect(oneF.stores).toBe(1)
+
+    // B still gets a facility×level row from its store, with zero area
+    const bRow = reportByFacilityLevel(store.getState()).find((r) => r.name === 'B' && r.level === '1F')!
+    expect(bRow.stores).toBe(1)
+    expect(bRow.areaM2).toBe(0)
+  })
+
+  it('reports unscaled facility area as unscaledPt2, not areaM2', () => {
+    const store = createAreaStore({
+      pages: [{ pageIndex: 0, label: '1F', scale: null }],
+      names: ['A'],
+      areas: [square(0, 'A')] // 10x10 = 100 pt² on an unscaled page
+    })
+
+    const oneF = reportByLevel(store.getState()).find((r) => r.level === '1F')!
+    expect(oneF.areaM2).toBe(0)
+    expect(oneF.unscaledPt2).toBeCloseTo(100)
+
+    const aFac = reportByFacility(store.getState()).find((r) => r.name === 'A')!
+    expect(aFac.areaM2).toBe(0)
+    expect(aFac.unscaledPt2).toBeCloseTo(100)
+  })
 })

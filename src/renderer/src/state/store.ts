@@ -233,23 +233,31 @@ export function reportByFacility(state: ReportState): FacilityRow[] {
 }
 
 export function reportByFacilityLevel(state: ReportState): FacilityLevelRow[] {
-  const rows = new Map<string, FacilityLevelRow>()
+  // Nested map (name → level → row) so free-text names/labels can never
+  // collide the way a single `${name} ${level}` string key would.
+  const byName = new Map<string, Map<string, FacilityLevelRow>>()
   for (const area of state.areas) {
     const name = area.name.trim()
     if (!name) continue
     const level = levelOf(state, area.pageIndex)
-    const key = `${name} ${level}`
-    let row = rows.get(key)
+    let levels = byName.get(name)
+    if (!levels) {
+      levels = new Map()
+      byName.set(name, levels)
+    }
+    let row = levels.get(level)
     if (!row) {
       row = { name, level, areaM2: 0, unscaledPt2: 0, stores: 0 }
-      rows.set(key, row)
+      levels.set(level, row)
     }
     if (area.kind === 'store') row.stores += 1
     else addFacilityArea(row, state, area)
   }
 
   const order = orderedLevels(state)
-  return [...rows.values()].sort(
+  const rows: FacilityLevelRow[] = []
+  for (const levels of byName.values()) rows.push(...levels.values())
+  return rows.sort(
     (a, b) => a.name.localeCompare(b.name) || order.indexOf(a.level) - order.indexOf(b.level)
   )
 }
