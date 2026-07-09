@@ -24,6 +24,9 @@ flat table of business → area (m²) → polygon count. Three gaps:
 - Use each page's label as its **level**; group the report by level.
 - Generate a three-section report: by level, by facility, by facility × level.
 - A facility may span multiple floors (facility polygons on several pages).
+- Show a movable **facility legend** on each page (color swatch + 施設名 for every
+  facility present on that page), positioned once and reused on all pages, both
+  live on the canvas and baked into the exported PDF.
 
 ## Non-goals
 
@@ -69,6 +72,18 @@ prefixes: Record<string, string>   // facility name → store-code prefix (e.g. 
 `prefixes` is part of `AppState` and persisted in `ProjectFile`. An unset/empty
 prefix is allowed (codes become just the zero-padded number).
 
+### Legend state
+
+Two more fields on `AppState`, both persisted in `ProjectFile`:
+
+```ts
+legendPos: Pt | null      // top-left corner of the legend, in PDF points (bottom-left origin); null = default placement
+legendVisible: boolean    // show/hide the legend (default true)
+```
+
+One `legendPos` is shared by all pages. `null` renders at a default spot (top-left
+of the page, ~24pt inset); the first drag stores a concrete `Pt`.
+
 ### Project file & migration
 
 `ProjectFile.version` bumps from `1` to `2`. Backward compatibility on load
@@ -77,10 +92,12 @@ prefix is allowed (codes become just the zero-padded number).
 - Any area missing `kind` → default `kind: 'facility'` (and `code` stays
   undefined). This makes every v1 area a facility, preserving current behavior.
 - Missing `prefixes` → default `{}`.
+- Missing `legendPos` → `null`; missing `legendVisible` → `true`.
 - `version` is written as `2` on save; a loaded `version: 1` (or absent) is
   accepted and migrated in memory as above.
 
-`saveProject` adds `prefixes` and `version: 2` to the written object.
+`saveProject` adds `prefixes`, `legendPos`, `legendVisible`, and `version: 2` to
+the written object.
 
 ## Store code generation
 
@@ -179,6 +196,52 @@ The existing active-name selector becomes the **active facility** (label
 `PageState.label` is the level. Keep the Scale-panel editor; also show the label
 in the Toolbar page indicator (e.g. `1F · Page 2/5`).
 
+## Facility legend
+
+A legend box listing every facility present on the current page, shared position
+across all pages, shown live and baked into the export.
+
+### Membership
+
+`facilitiesOnPage(state, pageIndex): { name: string; color: string }[]` — distinct
+facility names that have **any** area (facility polygon **or** store) on that
+page, each with its resolved color (`colorForBusiness`), sorted by first
+appearance in `names`. Pages with no areas render no legend.
+
+### Layout
+
+Auto-sized box: a title-less stack of rows, each `[color swatch] 施設名`. Width =
+longest name + swatch + padding; height = `rows × rowH + padding`. Light
+background, subtle border. `legendPos` is the box's top-left corner.
+
+### Live canvas (PdfStage)
+
+- When `legendVisible` and the page has facilities, draw the legend on the
+  overlay (vector: rounded rect, swatches, names) at `legendPos` (converted from
+  PDF points to viewport; `null` → default top-left inset).
+- **Draggable:** a new `DragState` kind `'legend'`. In `onPointerDown`, a hit-test
+  against the legend bounds runs **before** the draw/edit branches (but after the
+  pan check), so the legend can be grabbed and moved in any tool without placing a
+  vertex. Drag updates `legendPos` (absolute-from-start off the pointer's PDF
+  point, mirroring area drag). Gated on the `moved` threshold.
+
+### Export (buildReport)
+
+- New `renderLegendPng(entries): Uint8Array` (in `report/legendImage.ts`,
+  analogous to `tableImage.ts`) renders the legend to a PNG via canvas — this
+  keeps CJK facility names rendering correctly (pdf-lib's standard fonts lack
+  Japanese glyphs, so the legend is embedded as an image, not `drawText`).
+- In `buildReportPdf`, for each page with facilities (and when `legendVisible`),
+  render that page's legend PNG and `drawImage` it at `legendPos` — converting the
+  stored top-left PDF point to pdf-lib's bottom-left origin using the image's
+  point height (fixed points-per-row). `null` → the same default inset used on
+  canvas.
+
+### Store actions
+
+- `setLegendPos(pos: Pt): void`
+- `setLegendVisible(visible: boolean): void` (a toggle in the Toolbar, default on)
+
 ## Copy/paste interaction
 
 The merged copy/paste feature must carry the new fields:
@@ -211,11 +274,15 @@ Store unit tests (`state/store.spec.ts`):
   facility polygons, store counts correct, multi-floor facility spans, level
   ordering by page order, unscaled handling.
 - v1→v2 migration: areas without `kind` load as facilities; missing `prefixes`
-  defaults to `{}`.
+  defaults to `{}`; missing `legendPos`/`legendVisible` default to `null`/`true`.
 - Copy/paste: pasted store is re-coded; pasted facility keeps its name.
+- `facilitiesOnPage`: includes a facility with only a store on the page; distinct,
+  color-resolved, ordered by `names`; empty for a bare page.
 
 Report-builder tests (`report/*.spec.ts`): the three sections render with correct
 grouped values; existing report tests updated for the new header/term.
+`renderLegendPng` produces a non-empty PNG for a set of entries (smoke test,
+mirroring existing `tableImage.spec.ts`).
 
 ## Implementation phasing (one spec, phased plan)
 
@@ -225,6 +292,9 @@ grouped values; existing report tests updated for the new header/term.
    with auto-code, canvas store labels, sidebar prefix/code editing, level in
    toolbar, copy/paste field carry + re-code.
 3. **Report** — three-section report data + canvas renderer + tests.
+4. **Facility legend** — `facilitiesOnPage` selector, `legendPos`/`legendVisible`
+   state + actions + migration, draggable overlay legend, `renderLegendPng`, and
+   per-page legend embedding in the export.
 
 ## Out of scope / future
 
