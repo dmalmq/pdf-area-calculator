@@ -30,6 +30,7 @@ export function Toolbar({
   const zoom = useAreaStore((s) => s.zoom)
   const areaCount = useAreaStore((s) => s.areas.length)
   const drawKind = useAreaStore((s) => s.drawKind)
+  const pageLabel = useAreaStore((s) => s.pages[s.activePageIndex]?.label ?? '')
   const setActivePage = useAreaStore((s) => s.setActivePage)
   const setTool = useAreaStore((s) => s.setTool)
   const setZoom = useAreaStore((s) => s.setZoom)
@@ -49,7 +50,7 @@ export function Toolbar({
           Prev
         </button>
         <span className="toolbar__label">
-          Page {pageCount ? pageIndex + 1 : 0}/{pageCount}
+          {pageCount ? `${pageLabel} · ` : ''}Page {pageCount ? pageIndex + 1 : 0}/{pageCount}
         </span>
         <button
           type="button"

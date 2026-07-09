@@ -209,7 +209,10 @@ export function PdfStage({ calibrationDraft, onCalibrationPoint, onToast }: PdfS
 
       const labelPt = viewportPt(viewport, centroid(area.polygon))
       const scaled = areaM2(state, area)
-      const lines = [area.name, scaled == null ? 'unscaled' : `${scaled.toFixed(2)} m²`]
+      const lines =
+        area.kind === 'store'
+          ? [area.code || '—']
+          : [area.name, scaled == null ? 'unscaled' : `${scaled.toFixed(2)} m²`]
       ctx.font = '600 13px "Yu Gothic UI", system-ui, sans-serif'
       ctx.textAlign = 'center'
       ctx.textBaseline = 'middle'
