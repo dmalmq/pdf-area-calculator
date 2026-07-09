@@ -121,4 +121,31 @@ describe('area store', () => {
 
     expect(store.getState().pdfPath).toBe('C:/Documents/sample.pdf')
   })
+
+  it('copies the selected area and nothing when no selection', () => {
+    const a = square(0, 'A')
+    const store = createAreaStore({ pages, names: ['A'], areas: [a], selectedAreaId: a.id })
+
+    expect(store.getState().copySelectedArea()).toBe(1)
+    expect(store.getState().clipboard).toEqual([{ name: 'A', polygon: a.polygon }])
+
+    store.getState().selectArea(null)
+    expect(store.getState().copySelectedArea()).toBe(0)
+  })
+
+  it('copies every area on the active page', () => {
+    const store = createAreaStore({
+      pages,
+      names: ['A', 'B'],
+      areas: [square(0, 'A'), square(1, 'B'), square(0, 'A')],
+      activePageIndex: 0
+    })
+
+    expect(store.getState().copyActivePage()).toBe(2)
+    expect(store.getState().clipboard.map((c) => c.name)).toEqual(['A', 'A'])
+
+    store.getState().setActivePage(1)
+    // page 1 has one area 'B'
+    expect(store.getState().copyActivePage()).toBe(1)
+  })
 })

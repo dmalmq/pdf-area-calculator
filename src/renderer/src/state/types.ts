@@ -29,6 +29,11 @@ export interface ReportRow {
   count: number // polygon count
 }
 
+export interface CopiedArea {
+  name: string
+  polygon: Pt[]
+}
+
 export interface ProjectFile {
   version: 1
   fileName: string | null
@@ -61,6 +66,7 @@ export interface AppState {
   areas: Area[]
   names: string[]
   colors: Record<string, string>
+  clipboard: CopiedArea[]
   activeName: string | null
   activePageIndex: number
   tool: Tool

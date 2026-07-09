@@ -5,7 +5,7 @@ import { areaToM2, shoelacePt2 } from '../geometry/area'
 import { resolveMmPerPt } from '../geometry/scale'
 import { loadPdf } from '../pdf/render'
 import { colorForName } from '../utils/colors'
-import type { AppState, Area, PageState, Pt, ReportRow, ScaleMode, Tool } from './types'
+import type { AppState, Area, CopiedArea, PageState, Pt, ReportRow, ScaleMode, Tool } from './types'
 
 export interface AreaStore extends AppState {
   loadDocument(bytes: Uint8Array, name: string): Promise<void>
@@ -35,6 +35,8 @@ export interface AreaStore extends AppState {
     fileName?: string | null
     pdfPath?: string | null
   }): void
+  copySelectedArea(): number
+  copyActivePage(): number
 }
 
 const initialState: AppState = {
@@ -52,7 +54,8 @@ const initialState: AppState = {
   selectedAreaId: null,
   calibrating: false,
   zoom: 1,
-  pan: { x: 0, y: 0 }
+  pan: { x: 0, y: 0 },
+  clipboard: []
 }
 
 function withName(names: string[], raw: string): string[] {
@@ -289,6 +292,24 @@ export function createAreaStore(initial?: Partial<AppState>): StoreApi<AreaStore
         activePageIndex: 0,
         tool: 'draw'
       }))
+    },
+
+    copySelectedArea() {
+      const state = get()
+      const area = state.areas.find((candidate) => candidate.id === state.selectedAreaId)
+      if (!area) return 0
+      const copied: CopiedArea = { name: area.name, polygon: area.polygon.map((pt) => ({ ...pt })) }
+      set({ clipboard: [copied] })
+      return 1
+    },
+
+    copyActivePage() {
+      const state = get()
+      const onPage = state.areas.filter((area) => area.pageIndex === state.activePageIndex)
+      if (onPage.length === 0) return 0
+      const copied: CopiedArea[] = onPage.map((area) => ({ name: area.name, polygon: area.polygon.map((pt) => ({ ...pt })) }))
+      set({ clipboard: copied })
+      return onPage.length
     }
   }))
 }
