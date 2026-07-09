@@ -2,7 +2,15 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { PageViewport } from 'pdfjs-dist'
 
 import { pointInPolygon, shoelacePt2 } from '../geometry/area'
-import { areaM2, areaStore, colorForBusiness, mmPerPtFor, nextStoreCode, useAreaStore } from '../state/store'
+import {
+  areaM2,
+  areaStore,
+  colorForBusiness,
+  facilitiesOnPage,
+  mmPerPtFor,
+  nextStoreCode,
+  useAreaStore
+} from '../state/store'
 import type { Area, Pt, Tool } from '../state/types'
 
 interface PdfStageProps {
@@ -12,7 +20,7 @@ interface PdfStageProps {
 }
 
 interface DragState {
-  kind: 'pan' | 'vertex' | 'area'
+  kind: 'pan' | 'vertex' | 'area' | 'legend'
   startClient: Pt
   startPan: Pt
   areaId?: string
@@ -61,6 +69,20 @@ function centroid(poly: Pt[]): Pt {
   return { x: sum.x / poly.length, y: sum.y / poly.length }
 }
 
+const LEGEND = { rowH: 22, padding: 10, swatch: 12, gap: 8, font: 13 }
+
+function legendEntriesWidth(ctx: CanvasRenderingContext2D, names: string[]): number {
+  ctx.font = `${LEGEND.font}px "Yu Gothic UI", system-ui, sans-serif`
+  const textW = Math.max(0, ...names.map((n) => ctx.measureText(n).width))
+  return LEGEND.padding * 2 + LEGEND.swatch + LEGEND.gap + textW
+}
+
+// Default legend top-left in PDF points: near the top-left of the page.
+export function defaultLegendPos(viewport: PageViewport): Pt {
+  const [x, y] = viewport.convertToPdfPoint(24, 24)
+  return { x, y }
+}
+
 function formatLiveArea(pt2: number, mmPerPt: number | null): string {
   if (mmPerPt == null) return `${pt2.toFixed(1)} pt²`
   return `${((pt2 * mmPerPt * mmPerPt) / 1_000_000).toFixed(2)} m²`
@@ -98,6 +120,9 @@ export function PdfStage({ calibrationDraft, onCalibrationPoint, onToast }: PdfS
   const pan = useAreaStore((s) => s.pan)
   const calibrating = useAreaStore((s) => s.calibrating)
   const drawKind = useAreaStore((s) => s.drawKind)
+  const legendVisible = useAreaStore((s) => s.legendVisible)
+  const legendPos = useAreaStore((s) => s.legendPos)
+  const setLegendPos = useAreaStore((s) => s.setLegendPos)
   const state = useAreaStore((s) => s)
   const addArea = useAreaStore((s) => s.addArea)
   const selectArea = useAreaStore((s) => s.selectArea)
@@ -226,6 +251,33 @@ export function PdfStage({ calibrationDraft, onCalibrationPoint, onToast }: PdfS
 
     pageAreas.forEach((area) => drawPolygon(area, area.id === selectedAreaId))
 
+    if (legendVisible) {
+      const entries = facilitiesOnPage(state, activePageIndex)
+      if (entries.length) {
+        const topLeftPdf = legendPos ?? defaultLegendPos(viewport)
+        const tl = viewportPt(viewport, topLeftPdf)
+        const boxW = legendEntriesWidth(ctx, entries.map((e) => e.name))
+        const boxH = LEGEND.padding * 2 + entries.length * LEGEND.rowH
+        ctx.save()
+        ctx.fillStyle = 'rgba(255,255,255,0.9)'
+        ctx.strokeStyle = '#9ca3af'
+        ctx.lineWidth = 1
+        ctx.fillRect(tl.x, tl.y, boxW, boxH)
+        ctx.strokeRect(tl.x, tl.y, boxW, boxH)
+        ctx.font = `${LEGEND.font}px "Yu Gothic UI", system-ui, sans-serif`
+        ctx.textAlign = 'left'
+        ctx.textBaseline = 'middle'
+        entries.forEach((entry, i) => {
+          const rowY = tl.y + LEGEND.padding + i * LEGEND.rowH + LEGEND.rowH / 2
+          ctx.fillStyle = entry.color
+          ctx.fillRect(tl.x + LEGEND.padding, rowY - LEGEND.swatch / 2, LEGEND.swatch, LEGEND.swatch)
+          ctx.fillStyle = '#111827'
+          ctx.fillText(entry.name, tl.x + LEGEND.padding + LEGEND.swatch + LEGEND.gap, rowY)
+        })
+        ctx.restore()
+      }
+    }
+
     if (draft.length) {
       const pts = [...draft, ...(hoverPt ? [hoverPt] : [])].map((pt) => viewportPt(viewport, pt))
       ctx.beginPath()
@@ -274,7 +326,22 @@ export function PdfStage({ calibrationDraft, onCalibrationPoint, onToast }: PdfS
         ctx.fillText('+', mid.x, mid.y + 0.5)
       })
     }
-  }, [calibrating, calibrationDraft, draft, hoverPt, pageAreas, selectedArea, selectedAreaId, selectedVertex, state, tool, viewport])
+  }, [
+    activePageIndex,
+    calibrating,
+    calibrationDraft,
+    draft,
+    hoverPt,
+    legendPos,
+    legendVisible,
+    pageAreas,
+    selectedArea,
+    selectedAreaId,
+    selectedVertex,
+    state,
+    tool,
+    viewport
+  ])
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
@@ -343,6 +410,18 @@ export function PdfStage({ calibrationDraft, onCalibrationPoint, onToast }: PdfS
     return null
   }
 
+  const legendBounds = (): { x: number; y: number; w: number; h: number } | null => {
+    if (!viewport || !legendVisible) return null
+    const entries = facilitiesOnPage(state, activePageIndex)
+    if (!entries.length) return null
+    const ctx = overlayRef.current?.getContext('2d')
+    if (!ctx) return null
+    const tl = viewportPt(viewport, legendPos ?? defaultLegendPos(viewport))
+    const w = legendEntriesWidth(ctx, entries.map((e) => e.name))
+    const h = LEGEND.padding * 2 + entries.length * LEGEND.rowH
+    return { x: tl.x, y: tl.y, w, h }
+  }
+
   const onPointerDown = (event: React.PointerEvent<HTMLCanvasElement>): void => {
     if (!viewport || !overlayRef.current) return
     if (event.button !== 0 && event.button !== 1) return
@@ -364,6 +443,24 @@ export function PdfStage({ calibrationDraft, onCalibrationPoint, onToast }: PdfS
 
     const pdfPt = eventToPdfPt(event.nativeEvent, canvas, viewport)
     const viewportPoint = eventToViewportPt(event.nativeEvent, canvas)
+
+    const bounds = legendBounds()
+    if (
+      bounds &&
+      viewportPoint.x >= bounds.x &&
+      viewportPoint.x <= bounds.x + bounds.w &&
+      viewportPoint.y >= bounds.y &&
+      viewportPoint.y <= bounds.y + bounds.h
+    ) {
+      setDrag({
+        kind: 'legend',
+        startClient: { x: event.clientX, y: event.clientY },
+        startPan: pan,
+        startPt: pdfPt,
+        moved: false
+      })
+      return
+    }
 
     if (calibrating) {
       onCalibrationPoint(pdfPt)
@@ -467,6 +564,11 @@ export function PdfStage({ calibrationDraft, onCalibrationPoint, onToast }: PdfS
           drag.startPolygon.map((pt) => ({ x: pt.x + delta.x, y: pt.y + delta.y }))
         )
       }
+      setDrag({ ...drag, moved })
+    }
+
+    if (drag.kind === 'legend') {
+      if (moved) setLegendPos(pdfPt)
       setDrag({ ...drag, moved })
     }
   }

@@ -36,6 +36,8 @@ export function Toolbar({
   const setZoom = useAreaStore((s) => s.setZoom)
   const setPan = useAreaStore((s) => s.setPan)
   const setDrawKind = useAreaStore((s) => s.setDrawKind)
+  const legendVisible = useAreaStore((s) => s.legendVisible)
+  const setLegendVisible = useAreaStore((s) => s.setLegendVisible)
 
   return (
     <header className="toolbar">
@@ -109,6 +111,13 @@ export function Toolbar({
       <div className="toolbar__group toolbar__group--end">
         <button type="button" disabled={areaCount < 1} onClick={onGenerateReport}>
           Generate Report
+        </button>
+        <button
+          type="button"
+          className={legendVisible ? 'is-active' : ''}
+          onClick={() => setLegendVisible(!legendVisible)}
+        >
+          Legend
         </button>
         <button type="button" onClick={onShowShortcuts}>Shortcuts (?)</button>
       </div>
