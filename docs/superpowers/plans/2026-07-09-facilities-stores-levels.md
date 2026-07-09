@@ -208,7 +208,7 @@ Add to `src/renderer/src/state/store.spec.ts` inside `describe('area store', ...
         { id: '3', pageIndex: 0, kind: 'store', name: 'A', code: 'ts002A', polygon: [] }
       ]
     })
-    // max trailing-digit ordinal is 4 (from ts004); ts002A's trailing digit is 2
+    // max ordinal is 4 (from ts004); ts002A counts as ordinal 2
     expect(nextStoreCode(store.getState(), 'A')).toBe('ts005')
   })
 
@@ -255,8 +255,11 @@ export function nextStoreCode(
   let max = 0
   for (const area of state.areas) {
     if (area.kind !== 'store' || area.name !== facilityName || !area.code) continue
-    const match = area.code.match(/(\d+)\s*$/)
-    if (match) max = Math.max(max, Number.parseInt(match[1], 10))
+    // Read the number part, ignoring the prefix and any non-numeric suffix
+    // (e.g. an edited "ts002A" counts as ordinal 2).
+    const body = prefix && area.code.startsWith(prefix) ? area.code.slice(prefix.length) : area.code
+    const match = body.match(/\d+/)
+    if (match) max = Math.max(max, Number.parseInt(match[0], 10))
   }
   return `${prefix}${String(max + 1).padStart(3, '0')}`
 }

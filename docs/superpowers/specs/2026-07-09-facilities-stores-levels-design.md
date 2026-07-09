@@ -105,8 +105,10 @@ the written object.
 
 - `prefix = state.prefixes[facilityName] ?? ''`
 - `n = 1 + max ordinal among existing store codes for that facility`, where the
-  ordinal is parsed from the trailing digits of each store's `code` (codes
-  without trailing digits are ignored for max). Start at `1` when none exist.
+  ordinal is the number read from each store's `code` after stripping the
+  facility prefix and ignoring any non-numeric suffix (e.g. an edited `ts002A`
+  counts as ordinal 2). Codes with no digits are ignored for max. Start at `1`
+  when none exist.
 - Return `prefix + String(n).padStart(3, '0')` (e.g. `ts001`, `ts012`).
 
 Codes are editable per store in the sidebar. Editing does not enforce global

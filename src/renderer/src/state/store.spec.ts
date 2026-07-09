@@ -204,8 +204,19 @@ describe('area store', () => {
         { id: '3', pageIndex: 0, kind: 'store', name: 'A', code: 'ts002A', polygon: [] }
       ]
     })
-    // max trailing-digit ordinal is 4 (from ts004); ts002A's trailing digit is 2
+    // max ordinal is 4 (from ts004)
     expect(nextStoreCode(store.getState(), 'A')).toBe('ts005')
+  })
+
+  it('counts a suffixed code by its number, ignoring the suffix', () => {
+    const store = createAreaStore({
+      pages,
+      names: ['A'],
+      prefixes: { A: 'ts' },
+      areas: [{ id: '1', pageIndex: 0, kind: 'store', name: 'A', code: 'ts002A', polygon: [] }]
+    })
+    // ts002A must count as ordinal 2, so the next code is ts003 (not a colliding ts001)
+    expect(nextStoreCode(store.getState(), 'A')).toBe('ts003')
   })
 
   it('uses an empty prefix as just the padded number', () => {
@@ -225,5 +236,16 @@ describe('area store', () => {
 
     store.getState().setDrawKind('store')
     expect(store.getState().drawKind).toBe('store')
+  })
+
+  it('setStoreCode is a no-op on a facility area or unknown id', () => {
+    const facility: Area = { id: 'f1', pageIndex: 0, kind: 'facility', name: 'A', polygon: [] }
+    const store = createAreaStore({ pages, names: ['A'], areas: [facility] })
+
+    store.getState().setStoreCode('f1', 'ts001') // facility → ignored
+    expect(store.getState().areas[0].code).toBeUndefined()
+
+    store.getState().setStoreCode('missing', 'ts001') // unknown id → no throw, no change
+    expect(store.getState().areas[0].code).toBeUndefined()
   })
 })
