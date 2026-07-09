@@ -362,10 +362,6 @@ export function PdfStage({ calibrationDraft, onCalibrationPoint, onToast }: PdfS
     }
 
     if (tool === 'edit') {
-      if (!selectedAreaId) {
-        onToast('Select an area to edit')
-        return
-      }
       const vertex = findVertexHit(viewportPoint)
       if (vertex) {
         setSelectedVertex(vertex)
@@ -397,6 +393,10 @@ export function PdfStage({ calibrationDraft, onCalibrationPoint, onToast }: PdfS
           startPolygon: bodyArea.polygon.map((pt) => ({ ...pt })),
           moved: false
         })
+        return
+      }
+      if (!selectedAreaId) {
+        onToast('Select an area to edit')
         return
       }
       setSelectedVertex(null)
@@ -445,17 +445,19 @@ export function PdfStage({ calibrationDraft, onCalibrationPoint, onToast }: PdfS
     }
 
     if (drag.areaId && drag.vertexIndex != null) {
-      moveVertex(drag.areaId, drag.vertexIndex, pdfPt)
+      if (moved) moveVertex(drag.areaId, drag.vertexIndex, pdfPt)
       setDrag({ ...drag, moved })
     }
 
     if (drag.kind === 'area' && drag.areaId && drag.startPt && drag.startPolygon) {
-      const raw = { x: pdfPt.x - drag.startPt.x, y: pdfPt.y - drag.startPt.y }
-      const delta = constrainDelta(raw, event.shiftKey)
-      setAreaPolygon(
-        drag.areaId,
-        drag.startPolygon.map((pt) => ({ x: pt.x + delta.x, y: pt.y + delta.y }))
-      )
+      if (moved) {
+        const raw = { x: pdfPt.x - drag.startPt.x, y: pdfPt.y - drag.startPt.y }
+        const delta = constrainDelta(raw, event.shiftKey)
+        setAreaPolygon(
+          drag.areaId,
+          drag.startPolygon.map((pt) => ({ x: pt.x + delta.x, y: pt.y + delta.y }))
+        )
+      }
       setDrag({ ...drag, moved })
     }
   }

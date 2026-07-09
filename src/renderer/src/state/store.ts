@@ -79,6 +79,10 @@ function withNameColor(colors: Record<string, string>, raw: string): Record<stri
   return { ...colors, [name]: colorForName(name) }
 }
 
+function clonePolygon(polygon: Pt[]): Pt[] {
+  return polygon.map((pt) => ({ ...pt }))
+}
+
 function projectColors(names: string[], colors: Record<string, string> | undefined): Record<string, string> {
   return names.reduce<Record<string, string>>((next, name) => {
     const custom = colors?.[name] ? cleanColor(colors[name]) : null
@@ -300,7 +304,7 @@ export function createAreaStore(initial?: Partial<AppState>): StoreApi<AreaStore
       const state = get()
       const area = state.areas.find((candidate) => candidate.id === state.selectedAreaId)
       if (!area) return 0
-      const copied: CopiedArea = { name: area.name, polygon: area.polygon.map((pt) => ({ ...pt })) }
+      const copied: CopiedArea = { name: area.name, polygon: clonePolygon(area.polygon) }
       set({ clipboard: [copied] })
       return 1
     },
@@ -309,7 +313,7 @@ export function createAreaStore(initial?: Partial<AppState>): StoreApi<AreaStore
       const state = get()
       const onPage = state.areas.filter((area) => area.pageIndex === state.activePageIndex)
       if (onPage.length === 0) return 0
-      const copied: CopiedArea[] = onPage.map((area) => ({ name: area.name, polygon: area.polygon.map((pt) => ({ ...pt })) }))
+      const copied: CopiedArea[] = onPage.map((area) => ({ name: area.name, polygon: clonePolygon(area.polygon) }))
       set({ clipboard: copied })
       return onPage.length
     },
@@ -322,7 +326,7 @@ export function createAreaStore(initial?: Partial<AppState>): StoreApi<AreaStore
         id: crypto.randomUUID(),
         pageIndex,
         name: copied.name,
-        polygon: copied.polygon.map((pt) => ({ ...pt }))
+        polygon: clonePolygon(copied.polygon)
       }))
       let names = state.names
       let colors = state.colors
