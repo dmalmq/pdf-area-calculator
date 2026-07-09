@@ -70,6 +70,22 @@ export function Sidebar(): React.JSX.Element {
           <h2>Areas on page</h2>
           <span>{activePageAreas.length}</span>
         </div>
+        <div className="area-actions">
+          <button
+            type="button"
+            disabled={activePageAreas.length === 0}
+            onClick={() => state.copyActivePage()}
+          >
+            Copy all
+          </button>
+          <button
+            type="button"
+            disabled={state.clipboard.length === 0}
+            onClick={() => state.pasteClipboard()}
+          >
+            Paste
+          </button>
+        </div>
         {activePageAreas.length === 0 ? (
           <p className="empty">Draw a polygon to create the first measured area.</p>
         ) : (
@@ -128,6 +144,9 @@ export function Sidebar(): React.JSX.Element {
               <option value="__new__">Add new name…</option>
             </select>
           </label>
+          <button type="button" onClick={() => state.copySelectedArea()}>
+            Copy area
+          </button>
           <button type="button" className="danger" onClick={() => state.deleteArea(selected.id)}>
             Delete selected area
           </button>

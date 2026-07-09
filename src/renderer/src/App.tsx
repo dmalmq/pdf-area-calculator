@@ -18,7 +18,10 @@ const shortcutRows = [
   ['Backspace', 'Undo drawing vertex or remove selected edit vertex'],
   ['Delete', 'Delete selected area'],
   ['Enter', 'Close in-progress polygon'],
-  ['Esc', 'Cancel, deselect, or close this overlay']
+  ['Esc', 'Cancel, deselect, or close this overlay'],
+  ['Ctrl/Cmd + C', 'Copy selected area, or whole page if none selected'],
+  ['Ctrl/Cmd + V', 'Paste areas onto the current page'],
+  ['Drag area (Edit tool)', 'Move the whole area — hold Shift to lock the axis']
 ]
 
 function baseName(path: string): string {
@@ -166,6 +169,20 @@ function App(): React.JSX.Element {
         return
       }
 
+      if ((event.ctrlKey || event.metaKey) && (event.key === 'c' || event.key === 'C')) {
+        event.preventDefault()
+        const count = state.selectedAreaId ? state.copySelectedArea() : state.copyActivePage()
+        showToast(count ? `Copied ${count} area${count === 1 ? '' : 's'}` : 'No areas to copy')
+        return
+      }
+
+      if ((event.ctrlKey || event.metaKey) && (event.key === 'v' || event.key === 'V')) {
+        event.preventDefault()
+        const count = state.pasteClipboard()
+        showToast(count ? `Pasted ${count} area${count === 1 ? '' : 's'}` : 'Nothing to paste')
+        return
+      }
+
       if (event.key === 'D' || event.key === 'd') state.setTool('draw')
       else if (event.key === 'E' || event.key === 'e') state.setTool('edit')
       else if (event.key === 'P' || event.key === 'p') state.setTool('pan')
@@ -195,7 +212,7 @@ function App(): React.JSX.Element {
       window.removeEventListener('keydown', onKeyDown)
       window.removeEventListener('keyup', onKeyUp)
     }
-  }, [shortcutsOpen])
+  }, [shortcutsOpen, showToast])
 
   return (
     <div className="app-shell">

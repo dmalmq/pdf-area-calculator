@@ -490,3 +490,13 @@ th {
     scroll-behavior: auto !important;
   }
 }
+
+.area-actions {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.area-actions button {
+  flex: 1;
+}
