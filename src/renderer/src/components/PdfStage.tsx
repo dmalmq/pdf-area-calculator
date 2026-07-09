@@ -125,7 +125,7 @@ export function PdfStage({ calibrationDraft, onCalibrationPoint, onToast }: PdfS
       onToast('Select or add a business name first')
       return
     }
-    addArea({ id: crypto.randomUUID(), pageIndex: activePageIndex, name: activeName, polygon: draft })
+    addArea({ id: crypto.randomUUID(), pageIndex: activePageIndex, kind: 'facility', name: activeName, polygon: draft })
     setDraft([])
     setHoverPt(null)
   }, [activeName, activePageIndex, addArea, draft, onToast])

@@ -35,6 +35,7 @@ describe('buildReportPdf', () => {
     const area: Area = {
       id: 'area-1',
       pageIndex: 0,
+      kind: 'facility',
       name: 'エスパル仙台本館',
       polygon: [
         { x: 20, y: 20 },

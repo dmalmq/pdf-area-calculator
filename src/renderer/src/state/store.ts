@@ -5,7 +5,7 @@ import { areaToM2, shoelacePt2 } from '../geometry/area'
 import { resolveMmPerPt } from '../geometry/scale'
 import { loadPdf } from '../pdf/render'
 import { colorForName } from '../utils/colors'
-import type { AppState, Area, CopiedArea, PageState, Pt, ReportRow, ScaleMode, Tool } from './types'
+import type { AppState, Area, AreaKind, CopiedArea, PageState, Pt, ReportRow, ScaleMode, Tool } from './types'
 
 export interface AreaStore extends AppState {
   loadDocument(bytes: Uint8Array, name: string): Promise<void>
@@ -57,7 +57,11 @@ const initialState: AppState = {
   calibrating: false,
   zoom: 1,
   pan: { x: 0, y: 0 },
-  clipboard: []
+  clipboard: [],
+  drawKind: 'facility' as AreaKind,
+  prefixes: {},
+  legendPos: null,
+  legendVisible: true
 }
 
 function withName(names: string[], raw: string): string[] {
@@ -304,7 +308,7 @@ export function createAreaStore(initial?: Partial<AppState>): StoreApi<AreaStore
       const state = get()
       const area = state.areas.find((candidate) => candidate.id === state.selectedAreaId)
       if (!area) return 0
-      const copied: CopiedArea = { name: area.name, polygon: clonePolygon(area.polygon) }
+      const copied: CopiedArea = { kind: area.kind, name: area.name, code: area.code, polygon: clonePolygon(area.polygon) }
       set({ clipboard: [copied] })
       return 1
     },
@@ -313,7 +317,7 @@ export function createAreaStore(initial?: Partial<AppState>): StoreApi<AreaStore
       const state = get()
       const onPage = state.areas.filter((area) => area.pageIndex === state.activePageIndex)
       if (onPage.length === 0) return 0
-      const copied: CopiedArea[] = onPage.map((area) => ({ name: area.name, polygon: clonePolygon(area.polygon) }))
+      const copied: CopiedArea[] = onPage.map((area) => ({ kind: area.kind, name: area.name, code: area.code, polygon: clonePolygon(area.polygon) }))
       set({ clipboard: copied })
       return onPage.length
     },
@@ -325,7 +329,9 @@ export function createAreaStore(initial?: Partial<AppState>): StoreApi<AreaStore
       const pasted: Area[] = state.clipboard.map((copied) => ({
         id: crypto.randomUUID(),
         pageIndex,
+        kind: copied.kind,
         name: copied.name,
+        code: copied.code,
         polygon: clonePolygon(copied.polygon)
       }))
       let names = state.names

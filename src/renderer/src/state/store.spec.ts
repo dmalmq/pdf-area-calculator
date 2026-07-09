@@ -11,6 +11,7 @@ const pages: PageState[] = [
 const square = (pageIndex: number, name: string): Area => ({
   id: crypto.randomUUID(),
   pageIndex,
+  kind: 'facility',
   name,
   polygon: [
     { x: 0, y: 0 },
@@ -127,7 +128,7 @@ describe('area store', () => {
     const store = createAreaStore({ pages, names: ['A'], areas: [a], selectedAreaId: a.id })
 
     expect(store.getState().copySelectedArea()).toBe(1)
-    expect(store.getState().clipboard).toEqual([{ name: 'A', polygon: a.polygon }])
+    expect(store.getState().clipboard).toEqual([{ kind: 'facility', name: 'A', polygon: a.polygon }])
 
     store.getState().selectArea(null)
     expect(store.getState().copySelectedArea()).toBe(0)

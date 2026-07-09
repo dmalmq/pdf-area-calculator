@@ -15,11 +15,15 @@ export interface PageState {
   scale: ScaleMode | null // null = unscaled
 }
 
+export type AreaKind = 'facility' | 'store'
+
 export interface Area {
   id: string // crypto.randomUUID()
   pageIndex: number
-  name: string // business name, trimmed
-  polygon: Pt[] // vertices in PDF pt space (resolution-independent)
+  kind: AreaKind // 'facility' (measured) | 'store' (counted only)
+  name: string // facility: its 施設名; store: the parent facility's 施設名
+  code?: string // store only, e.g. "ts001"
+  polygon: Pt[] // vertices in PDF pt space
 }
 
 export interface ReportRow {
@@ -30,7 +34,9 @@ export interface ReportRow {
 }
 
 export interface CopiedArea {
+  kind: AreaKind
   name: string
+  code?: string
   polygon: Pt[]
 }
 
@@ -66,6 +72,10 @@ export interface AppState {
   areas: Area[]
   names: string[]
   colors: Record<string, string>
+  drawKind: AreaKind
+  prefixes: Record<string, string>
+  legendPos: Pt | null
+  legendVisible: boolean
   clipboard: CopiedArea[]
   activeName: string | null
   activePageIndex: number
