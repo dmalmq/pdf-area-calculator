@@ -248,4 +248,35 @@ describe('area store', () => {
     store.getState().setStoreCode('missing', 'ts001') // unknown id → no throw, no change
     expect(store.getState().areas[0].code).toBeUndefined()
   })
+
+  it('migrates a v1 project: areas without kind become facilities, defaults applied', () => {
+    const store = createAreaStore({})
+    store.getState().importProject({
+      fileName: 'p.pdf',
+      pages,
+      names: ['A'],
+      areas: [{ id: 'a1', pageIndex: 0, name: 'A', polygon: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }] }]
+    })
+    expect(store.getState().areas[0].kind).toBe('facility')
+    expect(store.getState().prefixes).toEqual({})
+    expect(store.getState().legendPos).toBeNull()
+    expect(store.getState().legendVisible).toBe(true)
+  })
+
+  it('imports v2 project fields verbatim', () => {
+    const store = createAreaStore({})
+    store.getState().importProject({
+      fileName: 'p.pdf',
+      pages,
+      names: ['A'],
+      areas: [{ id: 's', pageIndex: 0, kind: 'store', name: 'A', code: 'ts001', polygon: [] }],
+      prefixes: { A: 'ts' },
+      legendPos: { x: 20, y: 800 },
+      legendVisible: false
+    })
+    expect(store.getState().areas[0].kind).toBe('store')
+    expect(store.getState().prefixes).toEqual({ A: 'ts' })
+    expect(store.getState().legendPos).toEqual({ x: 20, y: 800 })
+    expect(store.getState().legendVisible).toBe(false)
+  })
 })

@@ -68,13 +68,16 @@ function App(): React.JSX.Element {
   const saveProject = async (): Promise<void> => {
     const state = areaStore.getState()
     const project: ProjectFile = {
-      version: 1,
+      version: 2,
       fileName: state.fileName,
       pdfPath: state.pdfPath,
       pages: state.pages,
       areas: state.areas,
       names: state.names,
-      colors: state.colors
+      colors: state.colors,
+      prefixes: state.prefixes,
+      legendPos: state.legendPos,
+      legendVisible: state.legendVisible
     }
     const defaultName = `${withoutExt(state.fileName ?? 'pdf-area-calculator')}_project.json`
     const saved = await window.api.saveProject(project, defaultName)

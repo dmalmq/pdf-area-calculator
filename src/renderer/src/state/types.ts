@@ -41,13 +41,16 @@ export interface CopiedArea {
 }
 
 export interface ProjectFile {
-  version: 1
+  version: 1 | 2
   fileName: string | null
   pdfPath?: string | null
   pages: PageState[]
-  areas: Area[]
+  areas: Array<Omit<Area, 'kind'> & { kind?: AreaKind }>
   names: string[]
   colors?: Record<string, string>
+  prefixes?: Record<string, string>
+  legendPos?: Pt | null
+  legendVisible?: boolean
 }
 
 export interface PdfOpenResult {

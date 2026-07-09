@@ -29,9 +29,12 @@ export interface AreaStore extends AppState {
   setPages(pages: PageState[]): void
   importProject(project: {
     pages: PageState[]
-    areas: Area[]
+    areas: Array<Omit<Area, 'kind'> & { kind?: AreaKind }>
     names: string[]
     colors?: Record<string, string>
+    prefixes?: Record<string, string>
+    legendPos?: Pt | null
+    legendVisible?: boolean
     fileName?: string | null
     pdfPath?: string | null
   }): void
@@ -314,9 +317,19 @@ export function createAreaStore(initial?: Partial<AppState>): StoreApi<AreaStore
         fileName: project.fileName ?? state.fileName,
         pdfPath: project.pdfPath ?? null,
         pages: project.pages,
-        areas: project.areas,
+        areas: project.areas.map((area) => ({
+          id: area.id,
+          pageIndex: area.pageIndex,
+          kind: area.kind ?? 'facility',
+          name: area.name,
+          code: area.code,
+          polygon: area.polygon
+        })),
         names: project.names,
         colors: projectColors(project.names, project.colors),
+        prefixes: project.prefixes ?? {},
+        legendPos: project.legendPos ?? null,
+        legendVisible: project.legendVisible ?? true,
         activeName: project.names[0] ?? null,
         selectedAreaId: null,
         activePageIndex: 0,
