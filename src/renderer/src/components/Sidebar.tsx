@@ -25,7 +25,7 @@ export function Sidebar(): React.JSX.Element {
     <aside className="sidebar">
       <section className="panel">
         <div className="panel__header">
-          <h2>Businesses</h2>
+          <h2>施設名</h2>
           <span>{state.names.length}</span>
         </div>
         <div className="name-entry">
@@ -59,6 +59,13 @@ export function Sidebar(): React.JSX.Element {
                   <span style={{ background: color }} />
                   {candidate}
                 </button>
+                <input
+                  className="prefix-input"
+                  value={state.prefixes[candidate] ?? ''}
+                  placeholder="ts"
+                  aria-label={`${candidate} store code prefix`}
+                  onChange={(event) => state.setFacilityPrefix(candidate, event.target.value)}
+                />
               </div>
             )
           })}
@@ -97,8 +104,12 @@ export function Sidebar(): React.JSX.Element {
                   <button type="button" className="area-row__main" onClick={() => state.selectArea(area.id)}>
                     <span className="swatch" style={{ background: colorForBusiness(state, area.name) }} />
                     <span>
-                      <strong>{area.name}</strong>
-                      <small>{formatArea(scaled, shoelacePt2(area.polygon))}</small>
+                      <strong>{area.kind === 'store' ? area.code || '(no code)' : area.name}</strong>
+                      <small>
+                        {area.kind === 'store'
+                          ? `店舗 · ${area.name}`
+                          : formatArea(scaled, shoelacePt2(area.polygon))}
+                      </small>
                     </span>
                   </button>
                   <button
@@ -127,7 +138,7 @@ export function Sidebar(): React.JSX.Element {
             <span>{selected.polygon.length} vertices</span>
           </div>
           <label className="field">
-            <span>Business</span>
+            <span>施設名</span>
             <select
               value={selected.name}
               onChange={(event) => {
@@ -144,6 +155,15 @@ export function Sidebar(): React.JSX.Element {
               <option value="__new__">Add new name…</option>
             </select>
           </label>
+          {selected.kind === 'store' ? (
+            <label className="field">
+              <span>Store code</span>
+              <input
+                value={selected.code ?? ''}
+                onChange={(event) => state.setStoreCode(selected.id, event.target.value)}
+              />
+            </label>
+          ) : null}
           <button type="button" onClick={() => state.copySelectedArea()}>
             Copy area
           </button>
@@ -159,12 +179,12 @@ export function Sidebar(): React.JSX.Element {
           <span>{rows.length}</span>
         </div>
         {rows.length === 0 ? (
-          <p className="empty">Measured businesses will appear here before export.</p>
+          <p className="empty">Measured facilities will appear here before export.</p>
         ) : (
           <table>
             <thead>
               <tr>
-                <th>Business</th>
+                <th>施設名</th>
                 <th>m²</th>
                 <th>pt²</th>
                 <th>Count</th>

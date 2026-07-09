@@ -500,3 +500,8 @@ th {
 .area-actions button {
   flex: 1;
 }
+
+.prefix-input {
+  width: 56px;
+  flex: 0 0 auto;
+}
