@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest'
 
-import { aggregate, colorForBusiness, createAreaStore, nextStoreCode } from './store'
+import {
+  aggregate,
+  colorForBusiness,
+  createAreaStore,
+  nextStoreCode,
+  reportByFacility,
+  reportByFacilityLevel,
+  reportByLevel
+} from './store'
 import type { Area, PageState } from './types'
 
 const pages: PageState[] = [
@@ -278,5 +286,41 @@ describe('area store', () => {
     expect(store.getState().prefixes).toEqual({ A: 'ts' })
     expect(store.getState().legendPos).toEqual({ x: 20, y: 800 })
     expect(store.getState().legendVisible).toBe(false)
+  })
+
+  it('reports by level, facility and facility-level (stores counted, only facilities measured)', () => {
+    const store = createAreaStore({
+      pages: [
+        { pageIndex: 0, label: '1F', scale: { kind: 'custom', mmPerPt: 10 } },
+        { pageIndex: 1, label: 'B1F', scale: { kind: 'custom', mmPerPt: 10 } }
+      ],
+      names: ['Tekute', 'Other'],
+      areas: [
+        square(0, 'Tekute'), // facility on 1F, 10x10 pt @10mm/pt = 0.01 m²
+        square(1, 'Tekute'), // facility on B1F
+        square(0, 'Other'), // facility on 1F
+        { id: 's1', pageIndex: 0, kind: 'store', name: 'Tekute', code: 'ts001', polygon: [] },
+        { id: 's2', pageIndex: 0, kind: 'store', name: 'Tekute', code: 'ts002', polygon: [] },
+        { id: 's3', pageIndex: 1, kind: 'store', name: 'Tekute', code: 'ts003', polygon: [] }
+      ]
+    })
+
+    const byLevel = reportByLevel(store.getState())
+    expect(byLevel.map((r) => r.level)).toEqual(['1F', 'B1F']) // page order
+    const oneF = byLevel.find((r) => r.level === '1F')!
+    expect(oneF.stores).toBe(2)
+    expect(oneF.facilities).toBe(2) // Tekute + Other
+    expect(oneF.areaM2).toBeCloseTo(0.02) // two facility squares
+
+    const byFac = reportByFacility(store.getState())
+    const tekute = byFac.find((r) => r.name === 'Tekute')!
+    expect(tekute.stores).toBe(3)
+    expect(tekute.levels).toEqual(['1F', 'B1F'])
+    expect(tekute.areaM2).toBeCloseTo(0.02)
+
+    const byFacLevel = reportByFacilityLevel(store.getState())
+    const tekuteB1 = byFacLevel.find((r) => r.name === 'Tekute' && r.level === 'B1F')!
+    expect(tekuteB1.stores).toBe(1)
+    expect(tekuteB1.areaM2).toBeCloseTo(0.01)
   })
 })

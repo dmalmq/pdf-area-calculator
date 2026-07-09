@@ -33,6 +33,30 @@ export interface ReportRow {
   count: number // polygon count
 }
 
+export interface LevelRow {
+  level: string
+  areaM2: number
+  unscaledPt2: number
+  facilities: number
+  stores: number
+}
+
+export interface FacilityRow {
+  name: string
+  areaM2: number
+  unscaledPt2: number
+  levels: string[]
+  stores: number
+}
+
+export interface FacilityLevelRow {
+  name: string
+  level: string
+  areaM2: number
+  unscaledPt2: number
+  stores: number
+}
+
 export interface CopiedArea {
   kind: AreaKind
   name: string

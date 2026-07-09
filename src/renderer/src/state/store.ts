@@ -5,7 +5,20 @@ import { areaToM2, shoelacePt2 } from '../geometry/area'
 import { resolveMmPerPt } from '../geometry/scale'
 import { loadPdf } from '../pdf/render'
 import { colorForName } from '../utils/colors'
-import type { AppState, Area, AreaKind, CopiedArea, PageState, Pt, ReportRow, ScaleMode, Tool } from './types'
+import type {
+  AppState,
+  Area,
+  AreaKind,
+  CopiedArea,
+  FacilityLevelRow,
+  FacilityRow,
+  LevelRow,
+  PageState,
+  Pt,
+  ReportRow,
+  ScaleMode,
+  Tool
+} from './types'
 
 export interface AreaStore extends AppState {
   loadDocument(bytes: Uint8Array, name: string): Promise<void>
@@ -117,6 +130,7 @@ export function aggregate(state: Pick<AppState, 'areas' | 'pages'>): ReportRow[]
   const rows = new Map<string, ReportRow>()
 
   for (const area of state.areas) {
+    if (area.kind !== 'facility') continue
     const name = area.name.trim()
     if (!name) continue
 
@@ -136,6 +150,108 @@ export function aggregate(state: Pick<AppState, 'areas' | 'pages'>): ReportRow[]
     if (a.scaledM2 !== 0 && b.scaledM2 === 0) return -1
     return b.scaledM2 - a.scaledM2
   })
+}
+
+type ReportState = Pick<AppState, 'areas' | 'pages'>
+
+function levelOf(state: ReportState, pageIndex: number): string {
+  return state.pages.find((p) => p.pageIndex === pageIndex)?.label ?? `Page ${pageIndex + 1}`
+}
+
+function orderedLevels(state: ReportState): string[] {
+  const seen: string[] = []
+  for (const page of [...state.pages].sort((a, b) => a.pageIndex - b.pageIndex)) {
+    if (!seen.includes(page.label)) seen.push(page.label)
+  }
+  return seen
+}
+
+function addFacilityArea(target: { areaM2: number; unscaledPt2: number }, state: ReportState, area: Area): void {
+  const pt2 = shoelacePt2(area.polygon)
+  const m2 = areaToM2(pt2, mmPerPtFor(state, area.pageIndex))
+  if (m2 == null) target.unscaledPt2 += pt2
+  else target.areaM2 += m2
+}
+
+export function reportByLevel(state: ReportState): LevelRow[] {
+  const rows = new Map<string, LevelRow>()
+  const facilitySets = new Map<string, Set<string>>()
+  const ensure = (level: string): LevelRow => {
+    let row = rows.get(level)
+    if (!row) {
+      row = { level, areaM2: 0, unscaledPt2: 0, facilities: 0, stores: 0 }
+      rows.set(level, row)
+      facilitySets.set(level, new Set())
+    }
+    return row
+  }
+
+  for (const area of state.areas) {
+    const level = levelOf(state, area.pageIndex)
+    const row = ensure(level)
+    if (area.kind === 'store') {
+      row.stores += 1
+    } else {
+      addFacilityArea(row, state, area)
+      const name = area.name.trim()
+      if (name) facilitySets.get(level)!.add(name)
+    }
+  }
+  for (const [level, set] of facilitySets) ensure(level).facilities = set.size
+
+  const order = orderedLevels(state)
+  return [...rows.values()].sort((a, b) => order.indexOf(a.level) - order.indexOf(b.level))
+}
+
+export function reportByFacility(state: ReportState): FacilityRow[] {
+  const rows = new Map<string, FacilityRow & { levelSet: Set<string> }>()
+  const ensure = (name: string): FacilityRow & { levelSet: Set<string> } => {
+    let row = rows.get(name)
+    if (!row) {
+      row = { name, areaM2: 0, unscaledPt2: 0, levels: [], stores: 0, levelSet: new Set() }
+      rows.set(name, row)
+    }
+    return row
+  }
+
+  for (const area of state.areas) {
+    const name = area.name.trim()
+    if (!name) continue
+    const row = ensure(name)
+    row.levelSet.add(levelOf(state, area.pageIndex))
+    if (area.kind === 'store') row.stores += 1
+    else addFacilityArea(row, state, area)
+  }
+
+  const order = orderedLevels(state)
+  return [...rows.values()]
+    .map(({ levelSet, ...row }) => ({
+      ...row,
+      levels: [...levelSet].sort((a, b) => order.indexOf(a) - order.indexOf(b))
+    }))
+    .sort((a, b) => b.areaM2 - a.areaM2)
+}
+
+export function reportByFacilityLevel(state: ReportState): FacilityLevelRow[] {
+  const rows = new Map<string, FacilityLevelRow>()
+  for (const area of state.areas) {
+    const name = area.name.trim()
+    if (!name) continue
+    const level = levelOf(state, area.pageIndex)
+    const key = `${name} ${level}`
+    let row = rows.get(key)
+    if (!row) {
+      row = { name, level, areaM2: 0, unscaledPt2: 0, stores: 0 }
+      rows.set(key, row)
+    }
+    if (area.kind === 'store') row.stores += 1
+    else addFacilityArea(row, state, area)
+  }
+
+  const order = orderedLevels(state)
+  return [...rows.values()].sort(
+    (a, b) => a.name.localeCompare(b.name) || order.indexOf(a.level) - order.indexOf(b.level)
+  )
 }
 
 export function nextStoreCode(
