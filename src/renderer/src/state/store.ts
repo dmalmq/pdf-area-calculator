@@ -5,7 +5,7 @@ import { areaToM2, shoelacePt2 } from '../geometry/area'
 import { resolveMmPerPt } from '../geometry/scale'
 import { loadPdf } from '../pdf/render'
 import { colorForName } from '../utils/colors'
-import type { AppState, Area, AreaKind, CopiedArea, PageState, Pt, ReportRow, ScaleMode, Tool } from './types'
+import type { AppState, Area, CopiedArea, PageState, Pt, ReportRow, ScaleMode, Tool } from './types'
 
 export interface AreaStore extends AppState {
   loadDocument(bytes: Uint8Array, name: string): Promise<void>
@@ -58,7 +58,7 @@ const initialState: AppState = {
   zoom: 1,
   pan: { x: 0, y: 0 },
   clipboard: [],
-  drawKind: 'facility' as AreaKind,
+  drawKind: 'facility',
   prefixes: {},
   legendPos: null,
   legendVisible: true
