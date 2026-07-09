@@ -483,14 +483,30 @@ export function createAreaStore(initial?: Partial<AppState>): StoreApi<AreaStore
       const state = get()
       if (state.clipboard.length === 0) return 0
       const pageIndex = state.activePageIndex
-      const pasted: Area[] = state.clipboard.map((copied) => ({
-        id: crypto.randomUUID(),
-        pageIndex,
-        kind: copied.kind,
-        name: copied.name,
-        code: copied.code,
-        polygon: clonePolygon(copied.polygon)
-      }))
+      const pasted: Area[] = []
+      const working = { areas: [...state.areas], prefixes: state.prefixes }
+      for (const copied of state.clipboard) {
+        const area: Area =
+          copied.kind === 'store'
+            ? {
+                id: crypto.randomUUID(),
+                pageIndex,
+                kind: 'store',
+                name: copied.name,
+                code: nextStoreCode(working, copied.name),
+                polygon: clonePolygon(copied.polygon)
+              }
+            : {
+                id: crypto.randomUUID(),
+                pageIndex,
+                kind: 'facility',
+                name: copied.name,
+                code: copied.code,
+                polygon: clonePolygon(copied.polygon)
+              }
+        pasted.push(area)
+        working.areas.push(area)
+      }
       let names = state.names
       let colors = state.colors
       for (const area of pasted) {

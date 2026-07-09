@@ -178,6 +178,24 @@ describe('area store', () => {
     expect(store.getState().areas.find((area) => area.id === a.id)!.polygon).toEqual(a.polygon)
   })
 
+  it('re-codes pasted stores and keeps pasted facility names', () => {
+    const store = createAreaStore({
+      pages,
+      names: ['A'],
+      prefixes: { A: 'ts' },
+      areas: [
+        { id: 'f', pageIndex: 0, kind: 'facility', name: 'A', polygon: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }] },
+        { id: 's', pageIndex: 0, kind: 'store', name: 'A', code: 'ts001', polygon: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }] }
+      ]
+    })
+    // copy the store, paste it — it must get a fresh code, not ts001 again
+    store.getState().selectArea('s')
+    store.getState().copySelectedArea()
+    store.getState().pasteClipboard()
+    const codes = store.getState().areas.filter((a) => a.kind === 'store').map((a) => a.code)
+    expect(codes).toEqual(['ts001', 'ts002'])
+  })
+
   it('registers pasted names and returns 0 on empty clipboard', () => {
     const store = createAreaStore({ pages, names: [], areas: [], activePageIndex: 0 })
     expect(store.getState().pasteClipboard()).toBe(0)
