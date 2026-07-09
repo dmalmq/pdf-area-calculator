@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { PageViewport } from 'pdfjs-dist'
 
 import { pointInPolygon, shoelacePt2 } from '../geometry/area'
-import { areaM2, colorForBusiness, mmPerPtFor, useAreaStore } from '../state/store'
+import { areaM2, areaStore, colorForBusiness, mmPerPtFor, nextStoreCode, useAreaStore } from '../state/store'
 import type { Area, Pt, Tool } from '../state/types'
 
 interface PdfStageProps {
@@ -97,6 +97,7 @@ export function PdfStage({ calibrationDraft, onCalibrationPoint, onToast }: PdfS
   const zoom = useAreaStore((s) => s.zoom)
   const pan = useAreaStore((s) => s.pan)
   const calibrating = useAreaStore((s) => s.calibrating)
+  const drawKind = useAreaStore((s) => s.drawKind)
   const state = useAreaStore((s) => s)
   const addArea = useAreaStore((s) => s.addArea)
   const selectArea = useAreaStore((s) => s.selectArea)
@@ -122,13 +123,18 @@ export function PdfStage({ calibrationDraft, onCalibrationPoint, onToast }: PdfS
   const closeDraft = useCallback(() => {
     if (draft.length < 3) return
     if (!activeName) {
-      onToast('Select or add a business name first')
+      onToast(drawKind === 'store' ? 'Select a facility first' : 'Select or add a facility first')
       return
     }
-    addArea({ id: crypto.randomUUID(), pageIndex: activePageIndex, kind: 'facility', name: activeName, polygon: draft })
+    if (drawKind === 'store') {
+      const code = nextStoreCode(areaStore.getState(), activeName)
+      addArea({ id: crypto.randomUUID(), pageIndex: activePageIndex, kind: 'store', name: activeName, code, polygon: draft })
+    } else {
+      addArea({ id: crypto.randomUUID(), pageIndex: activePageIndex, kind: 'facility', name: activeName, polygon: draft })
+    }
     setDraft([])
     setHoverPt(null)
-  }, [activeName, activePageIndex, addArea, draft, onToast])
+  }, [activeName, activePageIndex, addArea, draft, drawKind, onToast])
 
   useEffect(() => {
     let cancelled = false

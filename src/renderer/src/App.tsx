@@ -19,6 +19,7 @@ const shortcutRows = [
   ['Delete', 'Delete selected area'],
   ['Enter', 'Close in-progress polygon'],
   ['Esc', 'Cancel, deselect, or close this overlay'],
+  ['F / S', 'Draw kind: facility / store'],
   ['Ctrl/Cmd + C', 'Copy selected area, or whole page if none selected'],
   ['Ctrl/Cmd + V', 'Paste areas onto the current page'],
   ['Drag area (Edit tool)', 'Move the whole area — hold Shift to lock the axis']
@@ -189,6 +190,8 @@ function App(): React.JSX.Element {
       if (event.key === 'D' || event.key === 'd') state.setTool('draw')
       else if (event.key === 'E' || event.key === 'e') state.setTool('edit')
       else if (event.key === 'P' || event.key === 'p') state.setTool('pan')
+      else if (event.key === 'F' || event.key === 'f') state.setDrawKind('facility')
+      else if (event.key === 'S' || event.key === 's') state.setDrawKind('store')
       else if (event.key === '[') state.setActivePage(state.activePageIndex - 1)
       else if (event.key === ']') state.setActivePage(state.activePageIndex + 1)
       else if (event.key === '+' || event.key === '=') state.setZoom(state.zoom * 1.2)

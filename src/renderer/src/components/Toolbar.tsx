@@ -29,10 +29,12 @@ export function Toolbar({
   const tool = useAreaStore((s) => s.tool)
   const zoom = useAreaStore((s) => s.zoom)
   const areaCount = useAreaStore((s) => s.areas.length)
+  const drawKind = useAreaStore((s) => s.drawKind)
   const setActivePage = useAreaStore((s) => s.setActivePage)
   const setTool = useAreaStore((s) => s.setTool)
   const setZoom = useAreaStore((s) => s.setZoom)
   const setPan = useAreaStore((s) => s.setPan)
+  const setDrawKind = useAreaStore((s) => s.setDrawKind)
 
   return (
     <header className="toolbar">
@@ -69,6 +71,23 @@ export function Toolbar({
             {toolLabel(candidate)}
           </button>
         ))}
+      </div>
+
+      <div className="toolbar__group" aria-label="Draw kind">
+        <button
+          type="button"
+          className={drawKind === 'facility' ? 'is-active' : ''}
+          onClick={() => setDrawKind('facility')}
+        >
+          施設
+        </button>
+        <button
+          type="button"
+          className={drawKind === 'store' ? 'is-active' : ''}
+          onClick={() => setDrawKind('store')}
+        >
+          店舗
+        </button>
       </div>
 
       <div className="toolbar__group">
