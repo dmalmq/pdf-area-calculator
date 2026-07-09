@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { anchoredZoomScroll, shouldPanPointer } from './PdfStage'
+import { anchoredZoomScroll, constrainDelta, shouldPanPointer } from './PdfStage'
 
 describe('PdfStage interaction helpers', () => {
   it('uses middle mouse as pan without treating it as a drawing click', () => {
@@ -21,5 +21,11 @@ describe('PdfStage interaction helpers', () => {
         nextZoom: 2
       })
     ).toEqual({ x: 400, y: 250 })
+  })
+
+  it('locks drag to the dominant axis when requested', () => {
+    expect(constrainDelta({ x: 5, y: 2 }, false)).toEqual({ x: 5, y: 2 })
+    expect(constrainDelta({ x: 5, y: 2 }, true)).toEqual({ x: 5, y: 0 })
+    expect(constrainDelta({ x: 2, y: 5 }, true)).toEqual({ x: 0, y: 5 })
   })
 })

@@ -12,11 +12,13 @@ interface PdfStageProps {
 }
 
 interface DragState {
-  kind: 'pan' | 'vertex'
+  kind: 'pan' | 'vertex' | 'area'
   startClient: Pt
   startPan: Pt
   areaId?: string
   vertexIndex?: number
+  startPt?: Pt
+  startPolygon?: Pt[]
   moved: boolean
 }
 
@@ -75,6 +77,11 @@ export function anchoredZoomScroll(input: AnchoredZoomInput): Pt {
   }
 }
 
+export function constrainDelta(delta: Pt, lockAxis: boolean): Pt {
+  if (!lockAxis) return delta
+  return Math.abs(delta.x) >= Math.abs(delta.y) ? { x: delta.x, y: 0 } : { x: 0, y: delta.y }
+}
+
 export function PdfStage({ calibrationDraft, onCalibrationPoint, onToast }: PdfStageProps): React.JSX.Element {
   const pageCanvasRef = useRef<HTMLCanvasElement>(null)
   const overlayRef = useRef<HTMLCanvasElement>(null)
@@ -97,6 +104,7 @@ export function PdfStage({ calibrationDraft, onCalibrationPoint, onToast }: PdfS
   const setPan = useAreaStore((s) => s.setPan)
   const setZoom = useAreaStore((s) => s.setZoom)
   const moveVertex = useAreaStore((s) => s.moveVertex)
+  const setAreaPolygon = useAreaStore((s) => s.setAreaPolygon)
   const insertVertex = useAreaStore((s) => s.insertVertex)
   const removeVertex = useAreaStore((s) => s.removeVertex)
   const [viewport, setViewport] = useState<PageViewport | null>(null)
@@ -376,6 +384,21 @@ export function PdfStage({ calibrationDraft, onCalibrationPoint, onToast }: PdfS
         insertVertex(selectedAreaId, midpoint.edgeIndex, midpoint.pt)
         return
       }
+      const bodyArea = findAreaAt(pdfPt)
+      if (bodyArea) {
+        if (bodyArea.id !== selectedAreaId) selectArea(bodyArea.id)
+        setSelectedVertex(null)
+        setDrag({
+          kind: 'area',
+          startClient: { x: event.clientX, y: event.clientY },
+          startPan: pan,
+          areaId: bodyArea.id,
+          startPt: pdfPt,
+          startPolygon: bodyArea.polygon.map((pt) => ({ ...pt })),
+          moved: false
+        })
+        return
+      }
       setSelectedVertex(null)
       return
     }
@@ -423,6 +446,16 @@ export function PdfStage({ calibrationDraft, onCalibrationPoint, onToast }: PdfS
 
     if (drag.areaId && drag.vertexIndex != null) {
       moveVertex(drag.areaId, drag.vertexIndex, pdfPt)
+      setDrag({ ...drag, moved })
+    }
+
+    if (drag.kind === 'area' && drag.areaId && drag.startPt && drag.startPolygon) {
+      const raw = { x: pdfPt.x - drag.startPt.x, y: pdfPt.y - drag.startPt.y }
+      const delta = constrainDelta(raw, event.shiftKey)
+      setAreaPolygon(
+        drag.areaId,
+        drag.startPolygon.map((pt) => ({ x: pt.x + delta.x, y: pt.y + delta.y }))
+      )
       setDrag({ ...drag, moved })
     }
   }
