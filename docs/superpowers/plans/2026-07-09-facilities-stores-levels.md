@@ -1567,17 +1567,27 @@ In `onPointerDown`, immediately after the pan check (`if (shouldPanPointer(...))
         startClient: { x: event.clientX, y: event.clientY },
         startPan: pan,
         startPt: pdfPt,
+        startLegendPos: legendPos ?? defaultLegendPos(viewport),
         moved: false
       })
       return
     }
 ```
 
-In `onPointerMove`, add a legend branch (after the `'area'` branch):
+(`DragState` gains an optional `startLegendPos?: Pt` field for this.)
+
+In `onPointerMove`, add a legend branch (after the `'area'` branch). Apply the
+pointer movement as a delta from the grabbed position so the box keeps its grab
+offset (mirroring area drag), rather than snapping its top-left to the cursor:
 
 ```ts
-    if (drag.kind === 'legend') {
-      if (moved) setLegendPos(pdfPt)
+    if (drag.kind === 'legend' && drag.startPt && drag.startLegendPos) {
+      if (moved) {
+        setLegendPos({
+          x: drag.startLegendPos.x + (pdfPt.x - drag.startPt.x),
+          y: drag.startLegendPos.y + (pdfPt.y - drag.startPt.y)
+        })
+      }
       setDrag({ ...drag, moved })
     }
 ```

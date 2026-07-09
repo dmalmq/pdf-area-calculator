@@ -27,6 +27,7 @@ interface DragState {
   vertexIndex?: number
   startPt?: Pt
   startPolygon?: Pt[]
+  startLegendPos?: Pt
   moved: boolean
 }
 
@@ -457,6 +458,7 @@ export function PdfStage({ calibrationDraft, onCalibrationPoint, onToast }: PdfS
         startClient: { x: event.clientX, y: event.clientY },
         startPan: pan,
         startPt: pdfPt,
+        startLegendPos: legendPos ?? defaultLegendPos(viewport),
         moved: false
       })
       return
@@ -567,8 +569,13 @@ export function PdfStage({ calibrationDraft, onCalibrationPoint, onToast }: PdfS
       setDrag({ ...drag, moved })
     }
 
-    if (drag.kind === 'legend') {
-      if (moved) setLegendPos(pdfPt)
+    if (drag.kind === 'legend' && drag.startPt && drag.startLegendPos) {
+      if (moved) {
+        setLegendPos({
+          x: drag.startLegendPos.x + (pdfPt.x - drag.startPt.x),
+          y: drag.startLegendPos.y + (pdfPt.y - drag.startPt.y)
+        })
+      }
       setDrag({ ...drag, moved })
     }
   }
