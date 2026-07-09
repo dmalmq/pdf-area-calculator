@@ -196,6 +196,25 @@ describe('area store', () => {
     expect(codes).toEqual(['ts001', 'ts002'])
   })
 
+  it('gives sequential codes to multiple stores pasted in one operation', () => {
+    const store = createAreaStore({
+      pages,
+      names: ['A'],
+      prefixes: { A: 'ts' },
+      activePageIndex: 0,
+      areas: [
+        { id: 's1', pageIndex: 0, kind: 'store', name: 'A', code: 'ts001', polygon: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }] },
+        { id: 's2', pageIndex: 0, kind: 'store', name: 'A', code: 'ts002', polygon: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }] }
+      ]
+    })
+    // copy the whole page (both stores), then paste — the two new stores must
+    // advance sequentially past the existing ones AND past each other.
+    store.getState().copyActivePage()
+    store.getState().pasteClipboard()
+    const codes = store.getState().areas.filter((a) => a.kind === 'store').map((a) => a.code)
+    expect(codes).toEqual(['ts001', 'ts002', 'ts003', 'ts004'])
+  })
+
   it('registers pasted names and returns 0 on empty clipboard', () => {
     const store = createAreaStore({ pages, names: [], areas: [], activePageIndex: 0 })
     expect(store.getState().pasteClipboard()).toBe(0)
