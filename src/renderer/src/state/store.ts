@@ -5,7 +5,7 @@ import { areaToM2, shoelacePt2 } from '../geometry/area'
 import { resolveMmPerPt } from '../geometry/scale'
 import { loadPdf } from '../pdf/render'
 import { colorForName } from '../utils/colors'
-import type { AppState, Area, CopiedArea, PageState, Pt, ReportRow, ScaleMode, Tool } from './types'
+import type { AppState, Area, AreaKind, CopiedArea, PageState, Pt, ReportRow, ScaleMode, Tool } from './types'
 
 export interface AreaStore extends AppState {
   loadDocument(bytes: Uint8Array, name: string): Promise<void>
@@ -39,6 +39,9 @@ export interface AreaStore extends AppState {
   copyActivePage(): number
   pasteClipboard(): number
   setAreaPolygon(id: string, polygon: Pt[]): void
+  setDrawKind(kind: AreaKind): void
+  setFacilityPrefix(name: string, prefix: string): void
+  setStoreCode(id: string, code: string): void
 }
 
 const initialState: AppState = {
@@ -130,6 +133,20 @@ export function aggregate(state: Pick<AppState, 'areas' | 'pages'>): ReportRow[]
     if (a.scaledM2 !== 0 && b.scaledM2 === 0) return -1
     return b.scaledM2 - a.scaledM2
   })
+}
+
+export function nextStoreCode(
+  state: Pick<AppState, 'areas' | 'prefixes'>,
+  facilityName: string
+): string {
+  const prefix = state.prefixes[facilityName]?.trim() ?? ''
+  let max = 0
+  for (const area of state.areas) {
+    if (area.kind !== 'store' || area.name !== facilityName || !area.code) continue
+    const match = area.code.match(/(\d+)\s*$/)
+    if (match) max = Math.max(max, Number.parseInt(match[1], 10))
+  }
+  return `${prefix}${String(max + 1).padStart(3, '0')}`
 }
 
 export function createAreaStore(initial?: Partial<AppState>): StoreApi<AreaStore> {
@@ -352,6 +369,24 @@ export function createAreaStore(initial?: Partial<AppState>): StoreApi<AreaStore
     setAreaPolygon(id, polygon) {
       set((state) => ({
         areas: state.areas.map((area) => (area.id === id ? { ...area, polygon } : area))
+      }))
+    },
+
+    setDrawKind(kind) {
+      set({ drawKind: kind })
+    },
+
+    setFacilityPrefix(name, prefix) {
+      const key = name.trim()
+      if (!key) return
+      set((state) => ({ prefixes: { ...state.prefixes, [key]: prefix.trim() } }))
+    },
+
+    setStoreCode(id, code) {
+      set((state) => ({
+        areas: state.areas.map((area) =>
+          area.id === id && area.kind === 'store' ? { ...area, code: code.trim() } : area
+        )
       }))
     }
   }))

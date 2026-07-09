@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { aggregate, colorForBusiness, createAreaStore } from './store'
+import { aggregate, colorForBusiness, createAreaStore, nextStoreCode } from './store'
 import type { Area, PageState } from './types'
 
 const pages: PageState[] = [
@@ -191,5 +191,39 @@ describe('area store', () => {
 
     store.getState().setAreaPolygon('missing', [{ x: 0, y: 0 }])
     expect(store.getState().areas[0].polygon).toEqual(next)
+  })
+
+  it('generates the next store code from the facility prefix', () => {
+    const store = createAreaStore({ pages, names: ['A'], prefixes: { A: 'ts' }, areas: [] })
+    expect(nextStoreCode(store.getState(), 'A')).toBe('ts001')
+
+    store.setState({
+      areas: [
+        { id: '1', pageIndex: 0, kind: 'store', name: 'A', code: 'ts001', polygon: [] },
+        { id: '2', pageIndex: 0, kind: 'store', name: 'A', code: 'ts004', polygon: [] },
+        { id: '3', pageIndex: 0, kind: 'store', name: 'A', code: 'ts002A', polygon: [] }
+      ]
+    })
+    // max trailing-digit ordinal is 4 (from ts004); ts002A's trailing digit is 2
+    expect(nextStoreCode(store.getState(), 'A')).toBe('ts005')
+  })
+
+  it('uses an empty prefix as just the padded number', () => {
+    const store = createAreaStore({ pages, names: ['A'], prefixes: {}, areas: [] })
+    expect(nextStoreCode(store.getState(), 'A')).toBe('001')
+  })
+
+  it('sets facility prefix, store code, and draw kind', () => {
+    const area: Area = { id: 's1', pageIndex: 0, kind: 'store', name: 'A', code: 'ts001', polygon: [] }
+    const store = createAreaStore({ pages, names: ['A'], areas: [area] })
+
+    store.getState().setFacilityPrefix('A', ' ts ')
+    expect(store.getState().prefixes.A).toBe('ts')
+
+    store.getState().setStoreCode('s1', ' ts009 ')
+    expect(store.getState().areas[0].code).toBe('ts009')
+
+    store.getState().setDrawKind('store')
+    expect(store.getState().drawKind).toBe('store')
   })
 })
