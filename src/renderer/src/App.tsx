@@ -5,8 +5,8 @@ import { ScalePanel } from './components/ScalePanel'
 import { Sidebar } from './components/Sidebar'
 import { Toolbar } from './components/Toolbar'
 import { buildReportPdf } from './report/buildReport'
-import { renderTablePng } from './report/tableImage'
-import { aggregate, areaStore, mmPerPtFor, useAreaStore } from './state/store'
+import { renderReportPng } from './report/reportImage'
+import { areaStore, mmPerPtFor, useAreaStore } from './state/store'
 import type { ProjectFile, Pt, Tool } from './state/types'
 
 const shortcutRows = [
@@ -124,18 +124,18 @@ function App(): React.JSX.Element {
       showToast('Open a PDF before generating a report')
       return
     }
-    const rows = aggregate(state)
-    if (!rows.length) return
-    const unscaledCount = state.areas.filter((area) => mmPerPtFor(state, area.pageIndex) == null).length
-    const includeUnscaled = unscaledCount > 0
-    if (includeUnscaled) {
+    if (!state.areas.length) return
+    const unscaledCount = state.areas.filter(
+      (area) => area.kind === 'facility' && mmPerPtFor(state, area.pageIndex) == null
+    ).length
+    if (unscaledCount > 0) {
       const ok = window.confirm(
-        `${unscaledCount} polygons are on unscaled pages and will be reported in pt², not m². Continue?`
+        `${unscaledCount} facility polygons are on unscaled pages and will be reported in pt², not m². Continue?`
       )
       if (!ok) return
     }
     const title = `面積集計 — ${state.fileName ?? 'PDF'}`
-    const png = await renderTablePng(rows, title, includeUnscaled)
+    const png = await renderReportPng(state, title)
     const pdf = await buildReportPdf(state.originalBytes, png, state.areas, state.colors)
     const defaultName = `${withoutExt(state.fileName ?? 'pdf')}_areas.pdf`
     const saved = await window.api.savePdf(pdf, defaultName)
