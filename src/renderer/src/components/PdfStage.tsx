@@ -12,6 +12,7 @@ import {
   useAreaStore
 } from '../state/store'
 import type { Area, Pt, Tool } from '../state/types'
+import { clampLegendTopLeft, defaultLegendTopLeft, LEGEND_LAYOUT, REPORT_FONT_FAMILY } from '../report/legendLayout'
 
 interface PdfStageProps {
   calibrationDraft: Pt[]
@@ -70,18 +71,24 @@ function centroid(poly: Pt[]): Pt {
   return { x: sum.x / poly.length, y: sum.y / poly.length }
 }
 
-const LEGEND = { rowH: 22, padding: 10, swatch: 12, gap: 8, font: 13 }
+const LEGEND = LEGEND_LAYOUT
 
 function legendEntriesWidth(ctx: CanvasRenderingContext2D, names: string[]): number {
-  ctx.font = `${LEGEND.font}px "Yu Gothic UI", system-ui, sans-serif`
+  ctx.font = `${LEGEND.font}px ${REPORT_FONT_FAMILY}`
   const textW = Math.max(0, ...names.map((n) => ctx.measureText(n).width))
   return LEGEND.padding * 2 + LEGEND.swatch + LEGEND.gap + textW
 }
 
-// Default legend top-left in PDF points: near the top-left of the page.
+// Page size in PDF points (bottom-left origin) from the viewport's viewBox.
+function pageSizePdf(viewport: PageViewport): { width: number; height: number } {
+  const [x0, y0, x1, y1] = viewport.viewBox
+  return { width: x1 - x0, height: y1 - y0 }
+}
+
+// Default legend top-left in PDF points — a fixed inset from the page top-left,
+// matching the exported PDF (independent of the current on-screen zoom).
 export function defaultLegendPos(viewport: PageViewport): Pt {
-  const [x, y] = viewport.convertToPdfPoint(24, 24)
-  return { x, y }
+  return defaultLegendTopLeft(pageSizePdf(viewport).height)
 }
 
 function formatLiveArea(pt2: number, mmPerPt: number | null): string {
@@ -239,7 +246,7 @@ export function PdfStage({ calibrationDraft, onCalibrationPoint, onToast }: PdfS
         area.kind === 'store'
           ? [area.code || '—']
           : [area.name, scaled == null ? 'unscaled' : `${scaled.toFixed(2)} m²`]
-      ctx.font = '600 13px "Yu Gothic UI", system-ui, sans-serif'
+      ctx.font = `600 13px ${REPORT_FONT_FAMILY}`
       ctx.textAlign = 'center'
       ctx.textBaseline = 'middle'
       ctx.fillStyle = '#111827'
@@ -265,7 +272,7 @@ export function PdfStage({ calibrationDraft, onCalibrationPoint, onToast }: PdfS
         ctx.lineWidth = 1
         ctx.fillRect(tl.x, tl.y, boxW, boxH)
         ctx.strokeRect(tl.x, tl.y, boxW, boxH)
-        ctx.font = `${LEGEND.font}px "Yu Gothic UI", system-ui, sans-serif`
+        ctx.font = `${LEGEND.font}px ${REPORT_FONT_FAMILY}`
         ctx.textAlign = 'left'
         ctx.textBaseline = 'middle'
         entries.forEach((entry, i) => {
@@ -571,10 +578,21 @@ export function PdfStage({ calibrationDraft, onCalibrationPoint, onToast }: PdfS
 
     if (drag.kind === 'legend' && drag.startPt && drag.startLegendPos) {
       if (moved) {
-        setLegendPos({
+        const rawPos = {
           x: drag.startLegendPos.x + (pdfPt.x - drag.startPt.x),
           y: drag.startLegendPos.y + (pdfPt.y - drag.startPt.y)
-        })
+        }
+        const ctx = canvas.getContext('2d')
+        const entries = facilitiesOnPage(state, activePageIndex)
+        if (ctx && entries.length) {
+          // Box size is in viewport px; convert to PDF points to clamp against the page.
+          const boxW = legendEntriesWidth(ctx, entries.map((e) => e.name)) / viewport.scale
+          const boxH = (LEGEND.padding * 2 + entries.length * LEGEND.rowH) / viewport.scale
+          const page = pageSizePdf(viewport)
+          setLegendPos(clampLegendTopLeft(rawPos, page.width, page.height, boxW, boxH))
+        } else {
+          setLegendPos(rawPos)
+        }
       }
       setDrag({ ...drag, moved })
     }

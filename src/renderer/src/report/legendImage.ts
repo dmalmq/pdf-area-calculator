@@ -1,11 +1,8 @@
 import type { LegendEntry } from '../state/types'
+import { LEGEND_LAYOUT, REPORT_FONT_FAMILY } from './legendLayout'
 
-const FONT_FAMILY = '"Yu Gothic UI","Yu Gothic","Meiryo","MS Gothic",sans-serif'
-const ROW_H = 22
-const PADDING = 10
-const SWATCH = 12
-const GAP = 8
-const FONT = 13
+const FONT_FAMILY = REPORT_FONT_FAMILY
+const { rowH: ROW_H, padding: PADDING, swatch: SWATCH, gap: GAP, font: FONT } = LEGEND_LAYOUT
 
 export interface LegendPng {
   png: Uint8Array

@@ -1,7 +1,8 @@
 import type { AppState } from '../state/types'
 import { reportByFacility, reportByFacilityLevel, reportByLevel } from '../state/store'
+import { REPORT_FONT_FAMILY } from './legendLayout'
 
-const FONT_FAMILY = '"Yu Gothic UI","Yu Gothic","Meiryo","MS Gothic",sans-serif'
+const FONT_FAMILY = REPORT_FONT_FAMILY
 
 interface Col {
   header: string

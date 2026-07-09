@@ -1,8 +1,9 @@
-import { PDFDocument, rgb, type RGB } from 'pdf-lib'
+import { PDFDocument, rgb, StandardFonts, type PDFFont, type RGB } from 'pdf-lib'
 
 import type { Area, LegendEntry, Pt } from '../state/types'
 import { colorForName } from '../utils/colors'
 import { renderLegendPng } from './legendImage'
+import { clampLegendTopLeft, defaultLegendTopLeft } from './legendLayout'
 
 function colorFromHex(hex: string): RGB {
   const value = Number.parseInt(hex.slice(1), 16)
@@ -18,8 +19,16 @@ function svgPath(points: Area['polygon']): string {
   return `${points.map((pt, index) => `${index === 0 ? 'M' : 'L'} ${pt.x} ${pt.y}`).join(' ')} Z`
 }
 
-function drawAreaOverlays(doc: PDFDocument, areas: Area[], colors: Record<string, string>): void {
+function centroid(points: Area['polygon']): Pt {
+  const sum = points.reduce((acc, pt) => ({ x: acc.x + pt.x, y: acc.y + pt.y }), { x: 0, y: 0 })
+  return { x: sum.x / points.length, y: sum.y / points.length }
+}
+
+// Store codes are ASCII, so a standard font renders them directly (facility
+// names are Japanese and stay unlabeled in-place — the legend names them).
+function drawAreaOverlays(doc: PDFDocument, areas: Area[], colors: Record<string, string>, codeFont: PDFFont): void {
   const pages = doc.getPages()
+  const codeSize = 9
   for (const area of areas) {
     const page = pages[area.pageIndex]
     if (!page || area.polygon.length < 3) continue
@@ -31,6 +40,18 @@ function drawAreaOverlays(doc: PDFDocument, areas: Area[], colors: Record<string
       borderOpacity: 0.9,
       borderWidth: 1.5
     })
+
+    if (area.kind === 'store' && area.code) {
+      const c = centroid(area.polygon)
+      const textW = codeFont.widthOfTextAtSize(area.code, codeSize)
+      page.drawText(area.code, {
+        x: c.x - textW / 2,
+        y: c.y - codeSize / 2,
+        size: codeSize,
+        font: codeFont,
+        color: rgb(0.07, 0.09, 0.15)
+      })
+    }
   }
 }
 
@@ -50,10 +71,8 @@ async function drawLegends(doc: PDFDocument, legend: LegendOptions): Promise<voi
     const img = await doc.embedPng(png)
     const page = pages[i]
     const { width: pw, height: ph } = page.getSize()
-    // Default inset: top-left with 24pt margin (PDF origin is bottom-left).
-    const topLeft: Pt = legend.pos ?? { x: 24, y: ph - 24 }
-    const x = Math.min(Math.max(topLeft.x, 0), Math.max(0, pw - width))
-    const yTop = Math.min(Math.max(topLeft.y, height), ph)
+    const topLeft: Pt = legend.pos ?? defaultLegendTopLeft(ph)
+    const { x, y: yTop } = clampLegendTopLeft(topLeft, pw, ph, width, height)
     page.drawImage(img, { x, y: yTop - height, width, height })
   }
 }
@@ -66,7 +85,8 @@ export async function buildReportPdf(
   legend?: LegendOptions
 ): Promise<Uint8Array> {
   const doc = await PDFDocument.load(originalBytes)
-  drawAreaOverlays(doc, areas, colors)
+  const codeFont = await doc.embedFont(StandardFonts.Helvetica)
+  drawAreaOverlays(doc, areas, colors, codeFont)
   if (legend) await drawLegends(doc, legend)
 
   const img = await doc.embedPng(png)

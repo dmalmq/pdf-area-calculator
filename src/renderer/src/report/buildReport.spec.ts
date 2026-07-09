@@ -51,4 +51,24 @@ describe('buildReportPdf', () => {
     expect(withOverlay.length).toBeGreaterThan(withoutOverlay.length)
     expect((await PDFDocument.load(withOverlay)).getPageCount()).toBe(2)
   })
+
+  it('labels store polygons with their code on the source pages', async () => {
+    const source = await PDFDocument.create()
+    source.addPage([300, 300])
+    const originalBytes = await source.save()
+    const polygon = [
+      { x: 20, y: 20 },
+      { x: 120, y: 20 },
+      { x: 120, y: 120 },
+      { x: 20, y: 120 }
+    ]
+    const withCode: Area = { id: 's', pageIndex: 0, kind: 'store', name: 'A', code: 'ts001', polygon }
+    const withoutCode: Area = { id: 's', pageIndex: 0, kind: 'store', name: 'A', polygon }
+
+    const labeled = await buildReportPdf(originalBytes, onePixelPng, [withCode])
+    const unlabeled = await buildReportPdf(originalBytes, onePixelPng, [withoutCode])
+
+    // The drawn code text adds content the code-less store does not.
+    expect(labeled.length).toBeGreaterThan(unlabeled.length)
+  })
 })
