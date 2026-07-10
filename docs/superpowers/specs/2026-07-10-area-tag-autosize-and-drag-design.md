@@ -1,52 +1,60 @@
-# Auto-sized, draggable area tags
+# Auto-sized, draggable area tags + store-tag display mode
 
 ## Problem
 
 Each area on the canvas draws a "tag" at its polygon centroid:
 - **Facility** tags show two lines: the facility name and its area (`<n> m²`, or `unscaled`).
-- **Store** tags show one line: the store code (e.g. `ts001`).
+- **Store** tags show one line: the store code (e.g. `S本館001`).
 
-Two problems, both on the on-canvas editing view only:
+Three problems:
 
-1. **Overflow** — the tag box is a fixed `116×40` px rectangle. Long facility
-   names render wider than the box, so the text spills outside the tag.
-2. **No repositioning** — a tag sits at the centroid and can cover an
-   underlying room or label the user needs to see. There is no way to move it.
+1. **Overflow** (on-canvas) — the tag box is a fixed `116×40` px rectangle. Long
+   facility names render wider than the box, so text spills outside the tag.
+2. **No repositioning** (on-canvas) — a tag sits at the centroid and can cover an
+   underlying room the user needs to see. There is no way to move it.
+3. **Store tags dominate at working zoom** — a full store code like `S本館001`
+   is nearly as large as the store polygon, so a page of stores becomes a wall of
+   codes. The user wants store tags to be toggleable and to optionally show just
+   the number (`1`, `2`, `3`).
 
 ## Scope (decided)
 
-- **Overflow fix**: auto-size the tag box to its text (grow the box; no
-  wrapping, no font shrinking).
-- **Move**: tags are draggable in the **Edit tool**, and the moved position
-  **persists** in the project file. It affects **the on-canvas view only** —
-  the exported PDF is unchanged.
+- **Overflow fix**: auto-size the tag box to its text (grow the box; no wrapping,
+  no font shrinking).
+- **Move**: tags are draggable in the **Edit tool**; moved positions **persist**
+  in the project file; **on-canvas view only** (the export is unaffected by moves).
+- **Store-tag display mode**: a `storeLabelMode` of `code | number | off`,
+  persisted, set from a 3-way toolbar control. Applies to **both** the on-canvas
+  store tags **and** the exported PDF's in-place store codes.
+  - `code` → full code (today's behavior; default)
+  - `number` → the numeric part of the code as an integer (`S本館007` → `7`)
+  - `off` → no store tag drawn
 
 ### Out of scope
 
-- Export-side label movement. The exported PDF keeps store codes centered at
-  the polygon centroid, and facilities remain unlabeled in place (named via the
-  legend). `buildReport.ts` is not touched.
-- Line wrapping and font auto-shrinking for long names.
+- Facility tags are unchanged by the store-tag mode (still always show name + m²).
+  Facility tags are still auto-sized and draggable.
+- The exported report's **summary page** (`report/reportImage.ts`) is unchanged —
+  it aggregates counts/m², not per-store codes.
+- Line wrapping / font auto-shrinking for long names.
 - Scaling the tag with zoom. Tags stay a fixed screen size (as today); only the
   box dimensions change from fixed to measured.
+- Moving a tag does **not** move the exported store code (export uses the centroid).
 
 ## Design
 
-All changes are in `src/renderer/src/components/PdfStage.tsx`, plus a per-area
-state field (`types.ts`), one store action (`store.ts`), and its persistence
-mapping (`store.ts` `importProject`). The exported PDF pipeline is untouched.
+Changes span `types.ts`, a new pure helper module, `store.ts`, `App.tsx`,
+`components/PdfStage.tsx`, `components/Toolbar.tsx`, and `report/buildReport.ts`.
 
-### 1. Auto-sized tag box
+### 1. Auto-sized tag box (on-canvas)
 
-Introduce tag layout constants and a pure sizing helper, both module-level in
-`PdfStage.tsx`:
+Tag layout constants and a pure sizing helper, both module-level in `PdfStage.tsx`:
 
 ```ts
 const TAG = { font: 13, weight: 600, lineH: 15, padX: 10, padY: 8 }
 
-// Box dimensions (screen px) for a tag whose lines have the given measured
-// widths. width = widest line + horizontal padding on both sides;
-// height = one lineH per line + vertical padding on both sides.
+// Box (screen px) sized to its text: widest line + horizontal padding both
+// sides; one line-height per line + vertical padding. Auto-grows so long names fit.
 export function tagBoxSize(lineWidths: number[]): { width: number; height: number } {
   return {
     width: Math.max(0, ...lineWidths) + TAG.padX * 2,
@@ -57,123 +65,169 @@ export function tagBoxSize(lineWidths: number[]): { width: number; height: numbe
 
 Two shared helpers remove duplication between drawing and hit-testing:
 
-- `tagLines(area, state): string[]` — the lines for an area (store → `[code || '—']`;
-  facility → `[name, areaM2 == null ? 'unscaled' : '<n> m²']`). Reused by draw and `tagRect`.
-- `tagRect(area, ctx): { x, y, w, h }` — the tag's screen-px rectangle:
-  1. `anchorPdf = centroid(area.polygon) + (area.labelOffset ?? { x: 0, y: 0 })`
-  2. `center = viewportPt(viewport, anchorPdf)`
-  3. measure each `tagLines(area, state)` line at `${TAG.weight} ${TAG.font}px REPORT_FONT_FAMILY`
-  4. `size = tagBoxSize(widths)`
-  5. rect centered on `center`: `{ x: center.x - size.width/2, y: center.y - size.height/2, w: size.width, h: size.height }`
+- `tagLines(area, state): string[]` — the lines for an area. Facility →
+  `[name, areaM2 == null ? 'unscaled' : '<n> m²']`. Store → `storeTagLabel(...)`
+  wrapped as `[label]`, or `[]` when the label is `null` (mode `off`).
+- `tagRect(area, ctx, viewport, state): { x, y, w, h, lines } | null` — returns
+  `null` when `tagLines` is empty (an `off` store), otherwise the tag's screen-px
+  rectangle (centroid + `labelOffset` → viewport px, auto-sized, centered) plus the
+  lines to draw. Shared by the draw path and hit-testing so the drawn box and the
+  grabbable box are identical.
 
-The draw path (`drawPolygon`) uses `tagRect` for the box and draws each line
-centered (`textAlign 'center'`, `textBaseline 'middle'`) at
-`rect.x + rect.w/2`, `rect.y + TAG.padY + TAG.lineH/2 + i*TAG.lineH`. Colors are
-unchanged (dark `#111827` fill, white stroke, white text). This replaces the
-hard-coded `labelPt.x - 58`, `± 20`, `116`, `40`, and `labelPt.y - 7 + index*15`
+The draw path in `drawPolygon` draws only when `tagRect` returns non-null, using
+`rect.lines` centered at `rect.x + rect.w/2`,
+`rect.y + TAG.padY + TAG.lineH/2 + i*TAG.lineH`. Colors unchanged (dark `#111827`
+fill, white stroke, white text). This replaces the hard-coded `±58/±20/116/40`
 math.
 
-### 2. Per-area label offset (state + persistence)
+### 2. Store-tag label helper (shared by canvas + export)
 
-`types.ts` — add to `Area`:
+New leaf module `src/renderer/src/state/storeLabel.ts` (depends only on `types.ts`,
+so both `PdfStage.tsx` and `report/buildReport.ts` can import it without coupling):
 
 ```ts
-labelOffset?: Pt // tag position as a delta from the centroid, in PDF points; absent = centroid
+import type { StoreLabelMode } from './types'
+
+// The label shown for a store given the display mode and the facility's code
+// prefix. Returns null when the store should have no tag (mode 'off').
+export function storeTagLabel(
+  code: string | undefined,
+  prefix: string | undefined,
+  mode: StoreLabelMode
+): string | null {
+  if (mode === 'off') return null
+  const value = (code ?? '').trim() || '—'
+  if (mode === 'code') return value
+  // mode 'number': strip a matching prefix, take the first digit run as an
+  // integer (drops leading zeros); fall back to the raw value if it has no digits.
+  const body = prefix && value.startsWith(prefix) ? value.slice(prefix.length) : value
+  const match = body.match(/\d+/)
+  return match ? String(Number.parseInt(match[0], 10)) : value
+}
 ```
 
-It is a **delta from the centroid**, so the tag follows the polygon when the
-area is moved or reshaped. Absent or `{ x: 0, y: 0 }` reproduces today's
-centered behavior. Because `ProjectFile.areas` is typed `Array<Omit<Area, 'kind'> & …>`,
-this optional field flows into the project type automatically.
+This mirrors the prefix-strip + `/\d+/` approach already in `nextStoreCode`.
+
+### 3. State, actions, persistence
+
+`types.ts`:
+- `Area.labelOffset?: Pt` — tag position as a delta from the centroid, in PDF
+  points; absent = centroid. A delta so the tag follows the polygon on move/reshape.
+- `export type StoreLabelMode = 'code' | 'number' | 'off'` (next to `LegendOrientation`).
+- `AppState.storeLabelMode: StoreLabelMode`.
+- `ProjectFile.storeLabelMode?: StoreLabelMode` (optional; no version bump).
+- `Area.labelOffset` flows into `ProjectFile.areas` automatically (typed
+  `Array<Omit<Area, 'kind'> & …>`).
 
 `store.ts`:
-- `AreaStore` gains `setAreaLabelOffset(id: string, offset: Pt): void`, implemented
-  as an immutable map update (mirrors `setAreaPolygon`):
-  ```ts
-  setAreaLabelOffset(id, offset) {
-    set((state) => ({
-      areas: state.areas.map((area) => (area.id === id ? { ...area, labelOffset: offset } : area))
-    }))
-  }
-  ```
-- `importProject` maps `labelOffset: area.labelOffset` onto each imported area
-  (alongside the existing `id`/`pageIndex`/`kind`/`name`/`code`/`polygon`).
-- `saveProject` (`App.tsx`) already serializes `state.areas` whole, so
-  `labelOffset` is persisted with no change there.
-- **Copy/paste**: `CopiedArea` is not extended; pasted areas start at the
-  centroid (offset absent). Intentional — a paste is a fresh area.
+- `initialState.storeLabelMode: 'code'`.
+- `AreaStore` gains `setAreaLabelOffset(id: string, offset: Pt): void` and
+  `setStoreLabelMode(mode: StoreLabelMode): void`; `importProject`'s parameter type
+  gains optional `labelOffset` (via the area type) and `storeLabelMode?`.
+- `setAreaLabelOffset` maps the offset onto one area (mirrors `setAreaPolygon`).
+- `setStoreLabelMode` sets the field.
+- `importProject` maps `labelOffset: area.labelOffset` per area and
+  `storeLabelMode: project.storeLabelMode ?? 'code'`.
 
-### 3. Drag interaction (Edit tool only)
+`App.tsx`:
+- `saveProject` adds `storeLabelMode: state.storeLabelMode` (areas — hence
+  `labelOffset` — are already serialized whole).
+- `generateReport` passes `{ mode: state.storeLabelMode, prefixes: state.prefixes }`
+  to `buildReportPdf`.
 
-`DragState` gains `kind: '… | 'label'` and a `startLabelOffset?: Pt` field.
+### 4. Drag interaction (Edit tool only) + reset
 
-A `findTagAt(viewportPoint): Area | null` helper iterates `pageAreas` top-most
-first and returns the first area whose `tagRect` contains the point (skipping
-areas with fewer than 2 vertices, matching the draw guard). It reads the overlay
-2D context for measurement.
+`DragState` gains `kind '… | 'label'` and `startLabelOffset?: Pt`. A
+`findTagAt(viewportPoint): Area | null` helper iterates `pageAreas` top-most first
+and returns the first area whose `tagRect` (non-null) contains the point.
 
-- **onPointerDown**, inside the `tool === 'edit'` branch, **before** the vertex
-  hit test: if `findTagAt(viewportPoint)` returns an area, start a label drag —
-  `setDrag({ kind: 'label', areaId, startClient, startPan: pan, startPt: pdfPt, startLabelOffset: area.labelOffset ?? { x: 0, y: 0 }, moved: false })` — and return.
-  Label drag does not change the current selection.
-- **onPointerMove**, new branch for `drag.kind === 'label'` (mirrors the legend
-  branch): once past the existing `moved` threshold, compute
-  `offset = { x: startLabelOffset.x + (pdfPt.x - startPt.x), y: startLabelOffset.y + (pdfPt.y - startPt.y) }`
-  and call `setAreaLabelOffset(drag.areaId, offset)`.
-- **onPointerUp** is unchanged (`setDrag(null)`).
+- **onPointerDown**, top of the `tool === 'edit'` branch (before the vertex hit):
+  if `findTagAt` hits, start a label drag
+  (`kind: 'label', areaId, startPt: pdfPt, startLabelOffset: area.labelOffset ?? {0,0}`)
+  and return. Does not change selection.
+- **onPointerMove**, new `drag.kind === 'label'` branch (mirrors legend): past the
+  `moved` threshold, `setAreaLabelOffset(areaId, startLabelOffset + (pdfPt - startPt))`.
+- **onDoubleClick**: when `tool === 'edit'`, if `findTagAt` hits, reset that area's
+  offset to `{0,0}` and return; else fall through to existing behavior.
 
-Why Edit-tool-only: in the Draw tool a click must place a vertex — including
-inside an existing polygon (the recently shipped draw-inside-polygon fix).
-Hit-testing tags there would steal those clicks and reintroduce that bug. The
-Pan tool pans. Edit is where areas are already being adjusted, so tag dragging
-belongs there. Legend dragging keeps its existing priority ahead of all tool
-logic.
+Why Edit-only: Draw-tool clicks must place vertices (including inside a polygon —
+the shipped draw-inside-polygon fix); stealing them for tag drags would reintroduce
+that bug. Pan pans. Legend drag keeps its existing priority.
 
-### 4. Reset (double-click a tag in Edit)
+### 5. Toolbar control
 
-`onDoubleClick`: when `tool === 'edit'`, first `findTagAt` at the event point;
-if it hits, call `setAreaLabelOffset(id, { x: 0, y: 0 })` and return (snap back to
-centroid). Otherwise fall through to the existing double-click behavior
-(select area + switch to Edit / close draft). The two single pointerdowns that
-precede a double-click each start a label drag with `moved: false`, which writes
-nothing, so the reset is clean.
+`Toolbar.tsx` gains a "Store tags" group (mirrors the legend Vertical/Horizontal
+buttons): **Code / Number / Off**, each `is-active` when it matches `storeLabelMode`,
+calling `setStoreLabelMode`.
+
+### 6. Export follows the mode
+
+`report/buildReport.ts` `drawAreaOverlays` takes `{ mode, prefixes }` and draws the
+in-place store label via `storeTagLabel(area.code, prefixes[area.name], mode)` —
+skipping when it returns `null` (mode `off`), drawing the number when `number`.
+`buildReportPdf` gains a trailing
+`storeLabels: { mode: StoreLabelMode; prefixes: Record<string, string> } = { mode: 'code', prefixes: {} }`
+parameter, so existing callers (and `buildReport.spec.ts`) keep today's `code`
+behavior with no change. Facility polygons remain unlabeled in place.
+
+Note: `number` mode yields ASCII digits, safe for the standard Helvetica code font.
+Rendering full non-ASCII codes (`code` mode with a Japanese prefix) in the export is
+a pre-existing standard-font limitation and is unchanged by this work.
 
 ## Testing
 
-- `PdfStage.spec.ts` — `tagBoxSize`:
-  - `tagBoxSize([40])` → `{ width: 40 + 20, height: 15 + 16 }` = `{ 60, 31 }` (store, 1 line).
-  - `tagBoxSize([120, 30])` → `{ width: 120 + 20, height: 30 + 16 }` = `{ 140, 46 }` (facility, wide name).
-  - `tagBoxSize([])` → `{ width: 20, height: 16 }` (padding only; `Math.max(0)` guard).
-- `store.spec.ts`:
-  - `setAreaLabelOffset(id, { x: 5, y: -3 })` sets that area's `labelOffset` and
-    leaves other areas untouched.
-  - `importProject` preserves a supplied `labelOffset`, and yields `undefined`
-    when omitted.
-- Drag/reset wiring reuses the existing, already-tested `DragState` pattern
-  (legend/vertex/area drags); the pure pieces above carry the unit coverage.
+- `state/storeLabel.spec.ts` — `storeTagLabel`:
+  - `('S本館007', 'S本館', 'code')` → `'S本館007'`
+  - `('S本館007', 'S本館', 'number')` → `'7'` (prefix strip + drop leading zeros)
+  - `('S本館007', undefined, 'number')` → `'7'` (first digit run works without prefix)
+  - `('ts002A', 'ts', 'number')` → `'2'` (non-numeric suffix ignored)
+  - `('abc', undefined, 'number')` → `'abc'` (no digits → raw fallback)
+  - `(undefined, 'x', 'code')` → `'—'`; `(undefined, 'x', 'number')` → `'—'`
+  - any code, mode `'off'` → `null`
+- `components/PdfStage.spec.ts` — `tagBoxSize`:
+  - `[40]` → `{60, 31}`, `[120, 30]` → `{140, 46}`, `[]` → `{20, 16}`
+- `state/store.spec.ts`:
+  - `setAreaLabelOffset(id, {x,y})` sets that area's `labelOffset`, others untouched.
+  - `setStoreLabelMode('number')` → `'number'`.
+  - `importProject` preserves a supplied `labelOffset` and `storeLabelMode`, and
+    defaults them (`undefined` / `'code'`) when omitted.
+- `report/buildReport.spec.ts` — existing tests call `buildReportPdf` without the new
+  param and rely on the `code` default; no change needed.
+- Drag/reset wiring reuses the existing `DragState` pattern; pure helpers carry the
+  unit coverage.
 
 ## Files touched
 
-- `src/renderer/src/state/types.ts` — `Area.labelOffset?`.
-- `src/renderer/src/state/store.ts` — `setAreaLabelOffset`, `importProject` mapping.
+- `src/renderer/src/state/types.ts` — `Area.labelOffset?`, `StoreLabelMode`,
+  `AppState.storeLabelMode`, `ProjectFile.storeLabelMode?`.
+- `src/renderer/src/state/storeLabel.ts` — new; `storeTagLabel`.
+- `src/renderer/src/state/store.ts` — `initialState`, `setAreaLabelOffset`,
+  `setStoreLabelMode`, `importProject` mapping.
+- `src/renderer/src/App.tsx` — `saveProject` (`storeLabelMode`), `generateReport`
+  (store-label options).
 - `src/renderer/src/components/PdfStage.tsx` — `TAG`, `tagBoxSize`, `tagLines`,
-  `tagRect`, `findTagAt`; rewritten label draw; `DragState` `'label'` kind;
-  pointer-down/move label branches; double-click reset.
-- `src/renderer/src/components/PdfStage.spec.ts`, `store.spec.ts` — tests.
-- Not touched: `report/buildReport.ts`, `report/legendImage.ts`, `App.tsx`
-  (`saveProject` already serializes areas whole).
+  `tagRect`, `findTagAt`; rewritten label draw; `DragState` `'label'`; pointer
+  down/move label branches; double-click reset.
+- `src/renderer/src/components/Toolbar.tsx` — "Store tags" Code/Number/Off group.
+- `src/renderer/src/report/buildReport.ts` — `drawAreaOverlays` + `buildReportPdf`
+  store-label option.
+- Tests: `state/storeLabel.spec.ts` (new), `components/PdfStage.spec.ts`,
+  `state/store.spec.ts`.
+- Not touched: `report/reportImage.ts` (summary page), `report/legendImage.ts`.
 
 ## Verification
 
-- `npx vitest run` — all pass, including new `tagBoxSize` / `setAreaLabelOffset`
-  / import tests.
+- `npx vitest run` — all pass, including new `storeTagLabel` / `tagBoxSize` /
+  `setAreaLabelOffset` / `setStoreLabelMode` / import tests.
 - `npm run typecheck` — clean.
 - Manual (`npm run dev`, any vector PDF):
-  - Draw a facility with a long name → the tag box grows to contain the whole
-    name (no overflow).
-  - Edit tool: drag a tag off a room → it moves and stays put; the polygon does
-    not move. Double-click the moved tag → snaps back to centroid.
-  - Draw tool: clicking where a tag sits still places a vertex (drag does not
-    fire) — the draw-inside-polygon fix is intact.
-  - Save Project → JSON areas contain `labelOffset` for moved tags; Open Project
-    restores the moved positions.
+  - Long facility name → tag box grows to contain the whole name (no overflow).
+  - Edit tool: drag a tag off a room → moves and stays; polygon does not move.
+    Double-click the moved tag → snaps back to centroid.
+  - Draw tool: clicking where a tag sits still places a vertex (drag does not fire).
+  - Store tags: toolbar **Number** → store tags show `1, 2, 3…`; **Off** → store
+    tags disappear; **Code** → full codes return. Facility tags unaffected.
+  - Generate Report in each mode → the exported PDF's in-place store labels match
+    (numbers / hidden / full codes).
+  - Save Project → JSON has `labelOffset` (for moved tags) and `storeLabelMode`;
+    Open Project restores both.
