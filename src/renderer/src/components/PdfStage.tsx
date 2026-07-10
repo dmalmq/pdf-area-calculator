@@ -488,7 +488,7 @@ export function PdfStage({
       })
     }
   }, [
-    activePageIndex,
+    sourceIndex,
     calibrating,
     calibrationDraft,
     draft,
