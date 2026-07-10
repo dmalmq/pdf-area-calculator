@@ -32,6 +32,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     'action.undo': '元に戻す',
     'action.redo': 'やり直す',
     'action.help': 'ヘルプ',
+    'action.tags': 'タグ',
     'action.inspector': 'インスペクタ',
     'action.close': '閉じる',
 
@@ -164,6 +165,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     'shortcuts.enter': '描画中のポリゴンを閉じる',
     'shortcuts.escape': 'キャンセル / 選択解除 / オーバーレイを閉じる',
     'shortcuts.kind': '描画種別: 施設 / 店舗',
+    'shortcuts.tags': 'すべてのタグ表示を切替',
     'shortcuts.copy': '選択エリア（なければページ全体）をコピー',
     'shortcuts.paste': '現在のページに貼り付け',
     'shortcuts.undo': '直前の操作を元に戻す',
@@ -223,6 +225,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     'action.undo': 'Undo',
     'action.redo': 'Redo',
     'action.help': 'Help',
+    'action.tags': 'Tags',
     'action.inspector': 'Inspector',
     'action.close': 'Close',
 
@@ -355,6 +358,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     'shortcuts.enter': 'Close in-progress polygon',
     'shortcuts.escape': 'Cancel / deselect / close overlay',
     'shortcuts.kind': 'Draw kind: facility / store',
+    'shortcuts.tags': 'Toggle all tags',
     'shortcuts.copy': 'Copy selected area, or whole page if none',
     'shortcuts.paste': 'Paste areas onto the current page',
     'shortcuts.undo': 'Undo the last change',

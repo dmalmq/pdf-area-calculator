@@ -36,6 +36,7 @@ const shortcutRows: [string, string][] = [
   ['Enter', 'shortcuts.enter'],
   ['Esc', 'shortcuts.escape'],
   ['F / S', 'shortcuts.kind'],
+  ['T', 'shortcuts.tags'],
   ['Ctrl/Cmd + C', 'shortcuts.copy'],
   ['Ctrl/Cmd + V', 'shortcuts.paste'],
   ['Ctrl/Cmd + Z', 'shortcuts.undo'],
@@ -327,6 +328,7 @@ function App(): React.JSX.Element {
       else if (event.key === 'P' || event.key === 'p') state.setTool('pan')
       else if (event.key === 'F' || event.key === 'f') state.setDrawKind('facility')
       else if (event.key === 'S' || event.key === 's') state.setDrawKind('store')
+      else if (event.key === 'T' || event.key === 't') state.setTagsVisible(!state.tagsVisible)
       else if (event.key === '[') state.setActivePage(state.activePageIndex - 1)
       else if (event.key === ']') state.setActivePage(state.activePageIndex + 1)
       else if (event.key === '+' || event.key === '=') state.setZoom(state.zoom * 1.2)

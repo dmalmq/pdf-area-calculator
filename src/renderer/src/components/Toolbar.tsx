@@ -50,6 +50,8 @@ export function Toolbar({
   const setActivePage = useAreaStore((s) => s.setActivePage)
   const setTool = useAreaStore((s) => s.setTool)
   const setDrawKind = useAreaStore((s) => s.setDrawKind)
+  const tagsVisible = useAreaStore((s) => s.tagsVisible)
+  const setTagsVisible = useAreaStore((s) => s.setTagsVisible)
 
   const runFromMenu = (action: () => void): void => {
     if (menuRef.current) menuRef.current.open = false
@@ -226,6 +228,14 @@ export function Toolbar({
           onClick={onGenerateReport}
         >
           {generating ? t('action.generating') : t('action.generateReport')}
+        </button>
+        <button
+          type="button"
+          className="btn"
+          aria-pressed={tagsVisible}
+          onClick={() => setTagsVisible(!tagsVisible)}
+        >
+          {t('action.tags')}
         </button>
         <button type="button" className="btn" onClick={onShowShortcuts}>
           {t('action.help')}

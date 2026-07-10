@@ -216,6 +216,7 @@ export function PdfStage({
   const calibrating = useAreaStore((s) => s.calibrating)
   const drawKind = useAreaStore((s) => s.drawKind)
   const legendVisible = useAreaStore((s) => s.legendVisible)
+  const tagsVisible = useAreaStore((s) => s.tagsVisible)
   const legendScale = useAreaStore((s) => s.legendScale)
   const legendOrientation = useAreaStore((s) => s.legendOrientation)
   const legendPos = useAreaStore((s) => s.legendPos)
@@ -373,7 +374,7 @@ export function PdfStage({
       ctx.stroke()
 
       const rect = tagRect(area, ctx, viewport, state)
-      if (rect) {
+      if (tagsVisible && rect) {
         ctx.font = `${TAG.weight} ${TAG.font}px ${REPORT_FONT_FAMILY}`
         ctx.textAlign = 'center'
         ctx.textBaseline = 'middle'
@@ -501,6 +502,7 @@ export function PdfStage({
     selectedAreaId,
     selectedVertex,
     state,
+    tagsVisible,
     tool,
     viewport
   ])
