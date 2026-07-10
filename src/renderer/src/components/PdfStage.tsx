@@ -29,7 +29,7 @@ interface PdfStageProps {
 }
 
 interface DragState {
-  kind: 'pan' | 'vertex' | 'area' | 'legend'
+  kind: 'pan' | 'vertex' | 'area' | 'legend' | 'label'
   startClient: Pt
   startPan: Pt
   areaId?: string
@@ -37,6 +37,7 @@ interface DragState {
   startPt?: Pt
   startPolygon?: Pt[]
   startLegendPos?: Pt
+  startLabelOffset?: Pt
   moved: boolean
 }
 
@@ -201,6 +202,7 @@ export function PdfStage({ calibrationDraft, onCalibrationPoint, onToast }: PdfS
   const setZoom = useAreaStore((s) => s.setZoom)
   const moveVertex = useAreaStore((s) => s.moveVertex)
   const setAreaPolygon = useAreaStore((s) => s.setAreaPolygon)
+  const setAreaLabelOffset = useAreaStore((s) => s.setAreaLabelOffset)
   const insertVertex = useAreaStore((s) => s.insertVertex)
   const removeVertex = useAreaStore((s) => s.removeVertex)
   const [viewport, setViewport] = useState<PageViewport | null>(null)
@@ -459,6 +461,26 @@ export function PdfStage({ calibrationDraft, onCalibrationPoint, onToast }: PdfS
     return null
   }
 
+  const findTagAt = (viewportPoint: Pt): Area | null => {
+    const ctx = overlayRef.current?.getContext('2d')
+    if (!ctx || !viewport) return null
+    for (let i = pageAreas.length - 1; i >= 0; i -= 1) {
+      const area = pageAreas[i]
+      if (area.polygon.length < 2) continue
+      const rect = tagRect(area, ctx, viewport, state)
+      if (
+        rect &&
+        viewportPoint.x >= rect.x &&
+        viewportPoint.x <= rect.x + rect.w &&
+        viewportPoint.y >= rect.y &&
+        viewportPoint.y <= rect.y + rect.h
+      ) {
+        return area
+      }
+    }
+    return null
+  }
+
   const findVertexHit = (viewportPoint: Pt): { areaId: string; index: number } | null => {
     if (!viewport || !selectedArea) return null
     const pts = selectedArea.polygon.map((pt) => viewportPt(viewport, pt))
@@ -539,6 +561,19 @@ export function PdfStage({ calibrationDraft, onCalibrationPoint, onToast }: PdfS
     }
 
     if (tool === 'edit') {
+      const tagArea = findTagAt(viewportPoint)
+      if (tagArea) {
+        setDrag({
+          kind: 'label',
+          startClient: { x: event.clientX, y: event.clientY },
+          startPan: pan,
+          areaId: tagArea.id,
+          startPt: pdfPt,
+          startLabelOffset: tagArea.labelOffset ?? { x: 0, y: 0 },
+          moved: false
+        })
+        return
+      }
       const vertex = findVertexHit(viewportPoint)
       if (vertex) {
         setSelectedVertex(vertex)
@@ -653,6 +688,16 @@ export function PdfStage({ calibrationDraft, onCalibrationPoint, onToast }: PdfS
       }
       setDrag({ ...drag, moved })
     }
+
+    if (drag.kind === 'label' && drag.areaId && drag.startPt && drag.startLabelOffset) {
+      if (moved) {
+        setAreaLabelOffset(drag.areaId, {
+          x: drag.startLabelOffset.x + (pdfPt.x - drag.startPt.x),
+          y: drag.startLabelOffset.y + (pdfPt.y - drag.startPt.y)
+        })
+      }
+      setDrag({ ...drag, moved })
+    }
   }
 
   const onPointerUp = (event: React.PointerEvent<HTMLCanvasElement>): void => {
@@ -663,6 +708,14 @@ export function PdfStage({ calibrationDraft, onCalibrationPoint, onToast }: PdfS
   const onDoubleClick = (event: React.MouseEvent<HTMLCanvasElement>): void => {
     if (!viewport || !overlayRef.current) return
     const pdfPt = eventToPdfPt(event.nativeEvent as PointerEvent, overlayRef.current, viewport)
+    if (tool === 'edit') {
+      const viewportPoint = eventToViewportPt(event.nativeEvent as PointerEvent, overlayRef.current)
+      const tagArea = findTagAt(viewportPoint)
+      if (tagArea) {
+        setAreaLabelOffset(tagArea.id, { x: 0, y: 0 })
+        return
+      }
+    }
     if (doubleClickAction(draft.length) === 'selectArea') {
       setDraft([])
       setHoverPt(null)
