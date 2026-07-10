@@ -74,7 +74,10 @@ export async function renderReportPng(
   const width = tableW + margin * 2
   const height =
     titleH +
-    sections.reduce((sum, s) => sum + sectionTitleH + headerH + rowH * s.rows.length + sectionGap, 0) +
+    sections.reduce(
+      (sum, s) => sum + sectionTitleH + headerH + rowH * s.rows.length + sectionGap,
+      0
+    ) +
     margin
 
   const canvas = document.createElement('canvas')
@@ -124,7 +127,11 @@ export async function renderReportPng(
       ctx.fillStyle = '#111827'
       for (const col of section.cols) {
         ctx.textAlign = col.align ?? 'left'
-        ctx.fillText(col.value(row), col.align === 'right' ? x + col.width - 12 : x + 12, y + rowH / 2)
+        ctx.fillText(
+          col.value(row),
+          col.align === 'right' ? x + col.width - 12 : x + 12,
+          y + rowH / 2
+        )
         x += col.width
       }
       y += rowH
@@ -133,7 +140,10 @@ export async function renderReportPng(
   }
 
   const blob = await new Promise<Blob>((resolve, reject) => {
-    canvas.toBlob((result) => (result ? resolve(result) : reject(new Error('PNG rendering failed'))), 'image/png')
+    canvas.toBlob(
+      (result) => (result ? resolve(result) : reject(new Error('PNG rendering failed'))),
+      'image/png'
+    )
   })
   return new Uint8Array(await blob.arrayBuffer())
 }

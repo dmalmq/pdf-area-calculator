@@ -40,7 +40,12 @@ function drawAreaOverlays(
     const page = pages[area.pageIndex]
     if (!page || area.polygon.length < 3) continue
     const color = overlayColor(area.name, colors)
-    page.drawSvgPath(svgPath(area.polygon), {
+    const holePaths = (area.holes ?? [])
+      .filter((ring) => ring.length >= 3)
+      .map((ring) => svgPath([...ring].reverse()))
+      .join(' ')
+    const overlayPath = holePaths ? `${svgPath(area.polygon)} ${holePaths}` : svgPath(area.polygon)
+    page.drawSvgPath(overlayPath, {
       color,
       opacity: 0.12,
       borderColor: color,
@@ -95,7 +100,10 @@ export async function buildReportPdf(
   areas: Area[] = [],
   colors: Record<string, string> = {},
   legend?: LegendOptions,
-  storeLabels: { mode: StoreLabelMode; prefixes: Record<string, string> } = { mode: 'code', prefixes: {} }
+  storeLabels: { mode: StoreLabelMode; prefixes: Record<string, string> } = {
+    mode: 'code',
+    prefixes: {}
+  }
 ): Promise<Uint8Array> {
   const doc = await PDFDocument.load(originalBytes)
   const codeFont = await doc.embedFont(StandardFonts.Helvetica)

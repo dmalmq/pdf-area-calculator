@@ -28,12 +28,14 @@
 ### Task 1: Area `kind` + new state fields (no behavior change)
 
 **Files:**
+
 - Modify: `src/renderer/src/state/types.ts`
 - Modify: `src/renderer/src/state/store.ts`
 - Modify: `src/renderer/src/components/PdfStage.tsx:122-131` (closeDraft)
 - Test: `src/renderer/src/state/store.spec.ts`
 
 **Interfaces:**
+
 - Produces: `AreaKind`; `Area` with required `kind: AreaKind` and optional `code?: string`; `CopiedArea` with `kind`/`code`; `AppState` fields `drawKind: AreaKind`, `prefixes: Record<string,string>`, `legendPos: Pt | null`, `legendVisible: boolean`.
 
 - [ ] **Step 1: Add types**
@@ -63,10 +65,10 @@ export interface CopiedArea {
 In the same file, add these fields to `AppState` (after `colors: Record<string, string>`):
 
 ```ts
-  drawKind: AreaKind
-  prefixes: Record<string, string>
-  legendPos: Pt | null
-  legendVisible: boolean
+drawKind: AreaKind
+prefixes: Record<string, string>
+legendPos: Pt | null
+legendVisible: boolean
 ```
 
 - [ ] **Step 2: Update store initial state and construction sites**
@@ -74,7 +76,17 @@ In the same file, add these fields to `AppState` (after `colors: Record<string, 
 In `src/renderer/src/state/store.ts`, import `AreaKind` in the type import line:
 
 ```ts
-import type { AppState, Area, AreaKind, CopiedArea, PageState, Pt, ReportRow, ScaleMode, Tool } from './types'
+import type {
+  AppState,
+  Area,
+  AreaKind,
+  CopiedArea,
+  PageState,
+  Pt,
+  ReportRow,
+  ScaleMode,
+  Tool
+} from './types'
 ```
 
 Add the new fields to `initialState` (after `clipboard: []` — add a comma):
@@ -90,26 +102,36 @@ Add the new fields to `initialState` (after `clipboard: []` — add a comma):
 Update `copySelectedArea`, `copyActivePage`, and `pasteClipboard` to carry `kind`/`code`. Replace the `copied` construction in `copySelectedArea`:
 
 ```ts
-      const copied: CopiedArea = { kind: area.kind, name: area.name, code: area.code, polygon: clonePolygon(area.polygon) }
+const copied: CopiedArea = {
+  kind: area.kind,
+  name: area.name,
+  code: area.code,
+  polygon: clonePolygon(area.polygon)
+}
 ```
 
 Replace the `copied` construction in `copyActivePage`:
 
 ```ts
-      const copied: CopiedArea[] = onPage.map((area) => ({ kind: area.kind, name: area.name, code: area.code, polygon: clonePolygon(area.polygon) }))
+const copied: CopiedArea[] = onPage.map((area) => ({
+  kind: area.kind,
+  name: area.name,
+  code: area.code,
+  polygon: clonePolygon(area.polygon)
+}))
 ```
 
 Replace the `pasted` mapping in `pasteClipboard`:
 
 ```ts
-      const pasted: Area[] = state.clipboard.map((copied) => ({
-        id: crypto.randomUUID(),
-        pageIndex,
-        kind: copied.kind,
-        name: copied.name,
-        code: copied.code,
-        polygon: clonePolygon(copied.polygon)
-      }))
+const pasted: Area[] = state.clipboard.map((copied) => ({
+  id: crypto.randomUUID(),
+  pageIndex,
+  kind: copied.kind,
+  name: copied.name,
+  code: copied.code,
+  polygon: clonePolygon(copied.polygon)
+}))
 ```
 
 - [ ] **Step 3: Update the facility drawing call in PdfStage**
@@ -117,7 +139,13 @@ Replace the `pasted` mapping in `pasteClipboard`:
 In `src/renderer/src/components/PdfStage.tsx`, in `closeDraft` (line ~128), tag the new area as a facility:
 
 ```ts
-    addArea({ id: crypto.randomUUID(), pageIndex: activePageIndex, kind: 'facility', name: activeName, polygon: draft })
+addArea({
+  id: crypto.randomUUID(),
+  pageIndex: activePageIndex,
+  kind: 'facility',
+  name: activeName,
+  polygon: draft
+})
 ```
 
 - [ ] **Step 4: Update the test helper and run the suite**
@@ -143,13 +171,13 @@ Also update the one existing clipboard assertion that now carries `kind` (in the
 "copies the selected area and nothing when no selection" test). Change:
 
 ```ts
-    expect(store.getState().clipboard).toEqual([{ name: 'A', polygon: a.polygon }])
+expect(store.getState().clipboard).toEqual([{ name: 'A', polygon: a.polygon }])
 ```
 
 to:
 
 ```ts
-    expect(store.getState().clipboard).toEqual([{ kind: 'facility', name: 'A', polygon: a.polygon }])
+expect(store.getState().clipboard).toEqual([{ kind: 'facility', name: 'A', polygon: a.polygon }])
 ```
 
 (`code: undefined` is ignored by `toEqual`; only `kind` must be added.)
@@ -171,10 +199,12 @@ git commit -m "feat: add area kind and facility/store/legend state fields"
 ### Task 2: Store-code helpers, facility prefix & draw-kind action
 
 **Files:**
+
 - Modify: `src/renderer/src/state/store.ts` (AreaStore interface + actions + `nextStoreCode`)
 - Test: `src/renderer/src/state/store.spec.ts`
 
 **Interfaces:**
+
 - Consumes: `AppState.prefixes`, `Area.kind/code` (Task 1).
 - Produces:
   - `nextStoreCode(state: Pick<AppState, 'areas' | 'prefixes'>, facilityName: string): string`
@@ -197,39 +227,46 @@ In `src/renderer/src/state/store.ts`, add to the `AreaStore` interface (after `s
 Add to `src/renderer/src/state/store.spec.ts` inside `describe('area store', ...)`:
 
 ```ts
-  it('generates the next store code from the facility prefix', () => {
-    const store = createAreaStore({ pages, names: ['A'], prefixes: { A: 'ts' }, areas: [] })
-    expect(nextStoreCode(store.getState(), 'A')).toBe('ts001')
+it('generates the next store code from the facility prefix', () => {
+  const store = createAreaStore({ pages, names: ['A'], prefixes: { A: 'ts' }, areas: [] })
+  expect(nextStoreCode(store.getState(), 'A')).toBe('ts001')
 
-    store.setState({
-      areas: [
-        { id: '1', pageIndex: 0, kind: 'store', name: 'A', code: 'ts001', polygon: [] },
-        { id: '2', pageIndex: 0, kind: 'store', name: 'A', code: 'ts004', polygon: [] },
-        { id: '3', pageIndex: 0, kind: 'store', name: 'A', code: 'ts002A', polygon: [] }
-      ]
-    })
-    // max ordinal is 4 (from ts004); ts002A counts as ordinal 2
-    expect(nextStoreCode(store.getState(), 'A')).toBe('ts005')
+  store.setState({
+    areas: [
+      { id: '1', pageIndex: 0, kind: 'store', name: 'A', code: 'ts001', polygon: [] },
+      { id: '2', pageIndex: 0, kind: 'store', name: 'A', code: 'ts004', polygon: [] },
+      { id: '3', pageIndex: 0, kind: 'store', name: 'A', code: 'ts002A', polygon: [] }
+    ]
   })
+  // max ordinal is 4 (from ts004); ts002A counts as ordinal 2
+  expect(nextStoreCode(store.getState(), 'A')).toBe('ts005')
+})
 
-  it('uses an empty prefix as just the padded number', () => {
-    const store = createAreaStore({ pages, names: ['A'], prefixes: {}, areas: [] })
-    expect(nextStoreCode(store.getState(), 'A')).toBe('001')
-  })
+it('uses an empty prefix as just the padded number', () => {
+  const store = createAreaStore({ pages, names: ['A'], prefixes: {}, areas: [] })
+  expect(nextStoreCode(store.getState(), 'A')).toBe('001')
+})
 
-  it('sets facility prefix, store code, and draw kind', () => {
-    const area: Area = { id: 's1', pageIndex: 0, kind: 'store', name: 'A', code: 'ts001', polygon: [] }
-    const store = createAreaStore({ pages, names: ['A'], areas: [area] })
+it('sets facility prefix, store code, and draw kind', () => {
+  const area: Area = {
+    id: 's1',
+    pageIndex: 0,
+    kind: 'store',
+    name: 'A',
+    code: 'ts001',
+    polygon: []
+  }
+  const store = createAreaStore({ pages, names: ['A'], areas: [area] })
 
-    store.getState().setFacilityPrefix('A', ' ts ')
-    expect(store.getState().prefixes.A).toBe('ts')
+  store.getState().setFacilityPrefix('A', ' ts ')
+  expect(store.getState().prefixes.A).toBe('ts')
 
-    store.getState().setStoreCode('s1', ' ts009 ')
-    expect(store.getState().areas[0].code).toBe('ts009')
+  store.getState().setStoreCode('s1', ' ts009 ')
+  expect(store.getState().areas[0].code).toBe('ts009')
 
-    store.getState().setDrawKind('store')
-    expect(store.getState().drawKind).toBe('store')
-  })
+  store.getState().setDrawKind('store')
+  expect(store.getState().drawKind).toBe('store')
+})
 ```
 
 Add `nextStoreCode` to the import at the top of the spec:
@@ -304,12 +341,14 @@ git commit -m "feat: store-code generation, facility prefix and draw-kind action
 ### Task 3: Project v2 migration & persistence
 
 **Files:**
+
 - Modify: `src/renderer/src/state/types.ts` (`ProjectFile`)
 - Modify: `src/renderer/src/state/store.ts` (`importProject`)
 - Modify: `src/renderer/src/App.tsx` (`saveProject`)
 - Test: `src/renderer/src/state/store.spec.ts`
 
 **Interfaces:**
+
 - Consumes: new state fields (Task 1).
 - Produces: `ProjectFile` v2 shape; `importProject` accepts areas without `kind` and defaults facility, `prefixes`/`legendPos`/`legendVisible`.
 
@@ -337,36 +376,47 @@ export interface ProjectFile {
 Add to `src/renderer/src/state/store.spec.ts`:
 
 ```ts
-  it('migrates a v1 project: areas without kind become facilities, defaults applied', () => {
-    const store = createAreaStore({})
-    store.getState().importProject({
-      fileName: 'p.pdf',
-      pages,
-      names: ['A'],
-      areas: [{ id: 'a1', pageIndex: 0, name: 'A', polygon: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }] }]
-    })
-    expect(store.getState().areas[0].kind).toBe('facility')
-    expect(store.getState().prefixes).toEqual({})
-    expect(store.getState().legendPos).toBeNull()
-    expect(store.getState().legendVisible).toBe(true)
+it('migrates a v1 project: areas without kind become facilities, defaults applied', () => {
+  const store = createAreaStore({})
+  store.getState().importProject({
+    fileName: 'p.pdf',
+    pages,
+    names: ['A'],
+    areas: [
+      {
+        id: 'a1',
+        pageIndex: 0,
+        name: 'A',
+        polygon: [
+          { x: 0, y: 0 },
+          { x: 1, y: 0 },
+          { x: 1, y: 1 }
+        ]
+      }
+    ]
   })
+  expect(store.getState().areas[0].kind).toBe('facility')
+  expect(store.getState().prefixes).toEqual({})
+  expect(store.getState().legendPos).toBeNull()
+  expect(store.getState().legendVisible).toBe(true)
+})
 
-  it('imports v2 project fields verbatim', () => {
-    const store = createAreaStore({})
-    store.getState().importProject({
-      fileName: 'p.pdf',
-      pages,
-      names: ['A'],
-      areas: [{ id: 's', pageIndex: 0, kind: 'store', name: 'A', code: 'ts001', polygon: [] }],
-      prefixes: { A: 'ts' },
-      legendPos: { x: 20, y: 800 },
-      legendVisible: false
-    })
-    expect(store.getState().areas[0].kind).toBe('store')
-    expect(store.getState().prefixes).toEqual({ A: 'ts' })
-    expect(store.getState().legendPos).toEqual({ x: 20, y: 800 })
-    expect(store.getState().legendVisible).toBe(false)
+it('imports v2 project fields verbatim', () => {
+  const store = createAreaStore({})
+  store.getState().importProject({
+    fileName: 'p.pdf',
+    pages,
+    names: ['A'],
+    areas: [{ id: 's', pageIndex: 0, kind: 'store', name: 'A', code: 'ts001', polygon: [] }],
+    prefixes: { A: 'ts' },
+    legendPos: { x: 20, y: 800 },
+    legendVisible: false
   })
+  expect(store.getState().areas[0].kind).toBe('store')
+  expect(store.getState().prefixes).toEqual({ A: 'ts' })
+  expect(store.getState().legendPos).toEqual({ x: 20, y: 800 })
+  expect(store.getState().legendVisible).toBe(false)
+})
 ```
 
 - [ ] **Step 3: Run tests to verify they fail**
@@ -425,18 +475,18 @@ Update the `importProject` signature in the `AreaStore` interface to accept the 
 In `src/renderer/src/App.tsx`, update the `project` literal in `saveProject`:
 
 ```ts
-    const project: ProjectFile = {
-      version: 2,
-      fileName: state.fileName,
-      pdfPath: state.pdfPath,
-      pages: state.pages,
-      areas: state.areas,
-      names: state.names,
-      colors: state.colors,
-      prefixes: state.prefixes,
-      legendPos: state.legendPos,
-      legendVisible: state.legendVisible
-    }
+const project: ProjectFile = {
+  version: 2,
+  fileName: state.fileName,
+  pdfPath: state.pdfPath,
+  pages: state.pages,
+  areas: state.areas,
+  names: state.names,
+  colors: state.colors,
+  prefixes: state.prefixes,
+  legendPos: state.legendPos,
+  legendVisible: state.legendVisible
+}
 ```
 
 - [ ] **Step 6: Run tests + typecheck**
@@ -456,11 +506,13 @@ git commit -m "feat: project v2 migration and persistence for facilities/stores/
 ### Task 4: Kind-aware report selectors
 
 **Files:**
+
 - Modify: `src/renderer/src/state/types.ts` (row types)
 - Modify: `src/renderer/src/state/store.ts` (selectors)
 - Test: `src/renderer/src/state/store.spec.ts`
 
 **Interfaces:**
+
 - Produces (all pure, exported from store.ts):
   - `reportByLevel(state): LevelRow[]`
   - `reportByFacility(state): FacilityRow[]`
@@ -502,41 +554,41 @@ export interface FacilityLevelRow {
 Add to `src/renderer/src/state/store.spec.ts`. Use a store where page 0 = '1F' (scaled mmPerPt 10) and page 1 = 'B1F' (unscaled), with a multi-floor facility and stores:
 
 ```ts
-  it('reports by level, facility and facility-level (stores counted, only facilities measured)', () => {
-    const store = createAreaStore({
-      pages: [
-        { pageIndex: 0, label: '1F', scale: { kind: 'custom', mmPerPt: 10 } },
-        { pageIndex: 1, label: 'B1F', scale: { kind: 'custom', mmPerPt: 10 } }
-      ],
-      names: ['Tekute', 'Other'],
-      areas: [
-        square(0, 'Tekute'), // facility on 1F, 10x10 pt @10mm/pt = 0.01 m²
-        square(1, 'Tekute'), // facility on B1F
-        square(0, 'Other'), // facility on 1F
-        { id: 's1', pageIndex: 0, kind: 'store', name: 'Tekute', code: 'ts001', polygon: [] },
-        { id: 's2', pageIndex: 0, kind: 'store', name: 'Tekute', code: 'ts002', polygon: [] },
-        { id: 's3', pageIndex: 1, kind: 'store', name: 'Tekute', code: 'ts003', polygon: [] }
-      ]
-    })
-
-    const byLevel = reportByLevel(store.getState())
-    expect(byLevel.map((r) => r.level)).toEqual(['1F', 'B1F']) // page order
-    const oneF = byLevel.find((r) => r.level === '1F')!
-    expect(oneF.stores).toBe(2)
-    expect(oneF.facilities).toBe(2) // Tekute + Other
-    expect(oneF.areaM2).toBeCloseTo(0.02) // two facility squares
-
-    const byFac = reportByFacility(store.getState())
-    const tekute = byFac.find((r) => r.name === 'Tekute')!
-    expect(tekute.stores).toBe(3)
-    expect(tekute.levels).toEqual(['1F', 'B1F'])
-    expect(tekute.areaM2).toBeCloseTo(0.02)
-
-    const byFacLevel = reportByFacilityLevel(store.getState())
-    const tekuteB1 = byFacLevel.find((r) => r.name === 'Tekute' && r.level === 'B1F')!
-    expect(tekuteB1.stores).toBe(1)
-    expect(tekuteB1.areaM2).toBeCloseTo(0.01)
+it('reports by level, facility and facility-level (stores counted, only facilities measured)', () => {
+  const store = createAreaStore({
+    pages: [
+      { pageIndex: 0, label: '1F', scale: { kind: 'custom', mmPerPt: 10 } },
+      { pageIndex: 1, label: 'B1F', scale: { kind: 'custom', mmPerPt: 10 } }
+    ],
+    names: ['Tekute', 'Other'],
+    areas: [
+      square(0, 'Tekute'), // facility on 1F, 10x10 pt @10mm/pt = 0.01 m²
+      square(1, 'Tekute'), // facility on B1F
+      square(0, 'Other'), // facility on 1F
+      { id: 's1', pageIndex: 0, kind: 'store', name: 'Tekute', code: 'ts001', polygon: [] },
+      { id: 's2', pageIndex: 0, kind: 'store', name: 'Tekute', code: 'ts002', polygon: [] },
+      { id: 's3', pageIndex: 1, kind: 'store', name: 'Tekute', code: 'ts003', polygon: [] }
+    ]
   })
+
+  const byLevel = reportByLevel(store.getState())
+  expect(byLevel.map((r) => r.level)).toEqual(['1F', 'B1F']) // page order
+  const oneF = byLevel.find((r) => r.level === '1F')!
+  expect(oneF.stores).toBe(2)
+  expect(oneF.facilities).toBe(2) // Tekute + Other
+  expect(oneF.areaM2).toBeCloseTo(0.02) // two facility squares
+
+  const byFac = reportByFacility(store.getState())
+  const tekute = byFac.find((r) => r.name === 'Tekute')!
+  expect(tekute.stores).toBe(3)
+  expect(tekute.levels).toEqual(['1F', 'B1F'])
+  expect(tekute.areaM2).toBeCloseTo(0.02)
+
+  const byFacLevel = reportByFacilityLevel(store.getState())
+  const tekuteB1 = byFacLevel.find((r) => r.name === 'Tekute' && r.level === 'B1F')!
+  expect(tekuteB1.stores).toBe(1)
+  expect(tekuteB1.areaM2).toBeCloseTo(0.01)
+})
 ```
 
 Add the selectors to the spec import:
@@ -595,7 +647,11 @@ function orderedLevels(state: ReportState): string[] {
   return seen
 }
 
-function addFacilityArea(target: { areaM2: number; unscaledPt2: number }, state: ReportState, area: Area): void {
+function addFacilityArea(
+  target: { areaM2: number; unscaledPt2: number },
+  state: ReportState,
+  area: Area
+): void {
   const pt2 = shoelacePt2(area.polygon)
   const m2 = areaToM2(pt2, mmPerPtFor(state, area.pageIndex))
   if (m2 == null) target.unscaledPt2 += pt2
@@ -667,7 +723,7 @@ export function reportByFacilityLevel(state: ReportState): FacilityLevelRow[] {
     const name = area.name.trim()
     if (!name) continue
     const level = levelOf(state, area.pageIndex)
-    const key = `${name} ${level}`
+    const key = `${name}�${level}`
     let row = rows.get(key)
     if (!row) {
       row = { name, level, areaM2: 0, unscaledPt2: 0, stores: 0 }
@@ -691,7 +747,7 @@ In `src/renderer/src/state/store.ts`, add a guard at the top of the `for` loop i
 `aggregate`, right after `for (const area of state.areas) {`:
 
 ```ts
-    if (area.kind !== 'facility') continue
+if (area.kind !== 'facility') continue
 ```
 
 The existing `aggregate` test uses only facility squares, so it still passes.
@@ -715,11 +771,13 @@ git commit -m "feat: kind-aware report selectors (by level, facility, facility-l
 ### Task 5: Draw-kind toggle + store drawing with auto-code
 
 **Files:**
+
 - Modify: `src/renderer/src/components/Toolbar.tsx` (draw-kind toggle)
 - Modify: `src/renderer/src/components/PdfStage.tsx` (closeDraft store branch)
 - Modify: `src/renderer/src/App.tsx` (keyboard F/S + shortcut rows)
 
 **Interfaces:**
+
 - Consumes: `drawKind`/`setDrawKind`, `nextStoreCode` (Tasks 1–2).
 
 - [ ] **Step 1: Add the draw-kind toggle to the Toolbar**
@@ -727,29 +785,29 @@ git commit -m "feat: kind-aware report selectors (by level, facility, facility-l
 In `src/renderer/src/components/Toolbar.tsx`, add store selectors near the others:
 
 ```ts
-  const drawKind = useAreaStore((s) => s.drawKind)
-  const setDrawKind = useAreaStore((s) => s.setDrawKind)
+const drawKind = useAreaStore((s) => s.drawKind)
+const setDrawKind = useAreaStore((s) => s.setDrawKind)
 ```
 
 Add this group immediately after the Tools `toolbar__group` (before the Zoom group):
 
 ```tsx
-      <div className="toolbar__group" aria-label="Draw kind">
-        <button
-          type="button"
-          className={drawKind === 'facility' ? 'is-active' : ''}
-          onClick={() => setDrawKind('facility')}
-        >
-          施設
-        </button>
-        <button
-          type="button"
-          className={drawKind === 'store' ? 'is-active' : ''}
-          onClick={() => setDrawKind('store')}
-        >
-          店舗
-        </button>
-      </div>
+<div className="toolbar__group" aria-label="Draw kind">
+  <button
+    type="button"
+    className={drawKind === 'facility' ? 'is-active' : ''}
+    onClick={() => setDrawKind('facility')}
+  >
+    施設
+  </button>
+  <button
+    type="button"
+    className={drawKind === 'store' ? 'is-active' : ''}
+    onClick={() => setDrawKind('store')}
+  >
+    店舗
+  </button>
+</div>
 ```
 
 - [ ] **Step 2: Wire store drawing in PdfStage.closeDraft**
@@ -757,33 +815,53 @@ Add this group immediately after the Tools `toolbar__group` (before the Zoom gro
 In `src/renderer/src/components/PdfStage.tsx`, add store selectors near the other `useAreaStore` calls:
 
 ```ts
-  const drawKind = useAreaStore((s) => s.drawKind)
+const drawKind = useAreaStore((s) => s.drawKind)
 ```
 
 Replace the `closeDraft` callback body:
 
 ```ts
-  const closeDraft = useCallback(() => {
-    if (draft.length < 3) return
-    if (!activeName) {
-      onToast(drawKind === 'store' ? 'Select a facility first' : 'Select or add a facility first')
-      return
-    }
-    if (drawKind === 'store') {
-      const code = nextStoreCode(areaStore.getState(), activeName)
-      addArea({ id: crypto.randomUUID(), pageIndex: activePageIndex, kind: 'store', name: activeName, code, polygon: draft })
-    } else {
-      addArea({ id: crypto.randomUUID(), pageIndex: activePageIndex, kind: 'facility', name: activeName, polygon: draft })
-    }
-    setDraft([])
-    setHoverPt(null)
-  }, [activeName, activePageIndex, addArea, draft, drawKind, onToast])
+const closeDraft = useCallback(() => {
+  if (draft.length < 3) return
+  if (!activeName) {
+    onToast(drawKind === 'store' ? 'Select a facility first' : 'Select or add a facility first')
+    return
+  }
+  if (drawKind === 'store') {
+    const code = nextStoreCode(areaStore.getState(), activeName)
+    addArea({
+      id: crypto.randomUUID(),
+      pageIndex: activePageIndex,
+      kind: 'store',
+      name: activeName,
+      code,
+      polygon: draft
+    })
+  } else {
+    addArea({
+      id: crypto.randomUUID(),
+      pageIndex: activePageIndex,
+      kind: 'facility',
+      name: activeName,
+      polygon: draft
+    })
+  }
+  setDraft([])
+  setHoverPt(null)
+}, [activeName, activePageIndex, addArea, draft, drawKind, onToast])
 ```
 
 Add `areaStore` and `nextStoreCode` to the store import at the top of PdfStage.tsx:
 
 ```ts
-import { areaM2, areaStore, colorForBusiness, mmPerPtFor, nextStoreCode, useAreaStore } from '../state/store'
+import {
+  areaM2,
+  areaStore,
+  colorForBusiness,
+  mmPerPtFor,
+  nextStoreCode,
+  useAreaStore
+} from '../state/store'
 ```
 
 - [ ] **Step 3: Keyboard shortcuts + overlay rows**
@@ -819,9 +897,11 @@ git commit -m "feat: draw-kind toggle and store drawing with auto-generated code
 ### Task 6: Sidebar — 施設名 rename, prefix input, store code editing
 
 **Files:**
+
 - Modify: `src/renderer/src/components/Sidebar.tsx`
 
 **Interfaces:**
+
 - Consumes: `prefixes`/`setFacilityPrefix`, `setStoreCode`, `Area.kind/code` (Tasks 1–2).
 
 - [ ] **Step 1: Rename the facilities panel and add the prefix input**
@@ -829,54 +909,56 @@ git commit -m "feat: draw-kind toggle and store drawing with auto-generated code
 In `src/renderer/src/components/Sidebar.tsx`, replace the first `<section className="panel">` block (the "Businesses" panel, lines 26-66) with:
 
 ```tsx
-      <section className="panel">
-        <div className="panel__header">
-          <h2>施設名</h2>
-          <span>{state.names.length}</span>
-        </div>
-        <div className="name-entry">
+<section className="panel">
+  <div className="panel__header">
+    <h2>施設名</h2>
+    <span>{state.names.length}</span>
+  </div>
+  <div className="name-entry">
+    <input
+      ref={inputRef}
+      value={name}
+      placeholder="エスパル仙台本館"
+      onChange={(event) => setName(event.target.value)}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter') addBusiness()
+      }}
+    />
+    <button type="button" onClick={addBusiness}>
+      Add
+    </button>
+  </div>
+  <div className="chip-list">
+    {state.names.map((candidate) => {
+      const color = colorForBusiness(state, candidate)
+      return (
+        <div key={candidate} className="chip-row">
           <input
-            ref={inputRef}
-            value={name}
-            placeholder="エスパル仙台本館"
-            onChange={(event) => setName(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter') addBusiness()
-            }}
+            type="color"
+            value={color}
+            aria-label={`${candidate} color`}
+            onChange={(event) => state.setNameColor(candidate, event.target.value)}
           />
-          <button type="button" onClick={addBusiness}>Add</button>
+          <button
+            type="button"
+            className={state.activeName === candidate ? 'chip is-active' : 'chip'}
+            onClick={() => state.setActiveName(candidate)}
+          >
+            <span style={{ background: color }} />
+            {candidate}
+          </button>
+          <input
+            className="prefix-input"
+            value={state.prefixes[candidate] ?? ''}
+            placeholder="ts"
+            aria-label={`${candidate} store code prefix`}
+            onChange={(event) => state.setFacilityPrefix(candidate, event.target.value)}
+          />
         </div>
-        <div className="chip-list">
-          {state.names.map((candidate) => {
-            const color = colorForBusiness(state, candidate)
-            return (
-              <div key={candidate} className="chip-row">
-                <input
-                  type="color"
-                  value={color}
-                  aria-label={`${candidate} color`}
-                  onChange={(event) => state.setNameColor(candidate, event.target.value)}
-                />
-                <button
-                  type="button"
-                  className={state.activeName === candidate ? 'chip is-active' : 'chip'}
-                  onClick={() => state.setActiveName(candidate)}
-                >
-                  <span style={{ background: color }} />
-                  {candidate}
-                </button>
-                <input
-                  className="prefix-input"
-                  value={state.prefixes[candidate] ?? ''}
-                  placeholder="ts"
-                  aria-label={`${candidate} store code prefix`}
-                  onChange={(event) => state.setFacilityPrefix(candidate, event.target.value)}
-                />
-              </div>
-            )
-          })}
-        </div>
-      </section>
+      )
+    })}
+  </div>
+</section>
 ```
 
 - [ ] **Step 2: Show kind/code in the area list**
@@ -884,14 +966,14 @@ In `src/renderer/src/components/Sidebar.tsx`, replace the first `<section classN
 Replace the `formatArea` usage row (the `<small>` line, ~101) so stores show their code and facilities show area. Replace the `<span>` block inside `area-row__main`:
 
 ```tsx
-                    <span>
-                      <strong>{area.kind === 'store' ? area.code || '(no code)' : area.name}</strong>
-                      <small>
-                        {area.kind === 'store'
-                          ? `店舗 · ${area.name}`
-                          : formatArea(areaM2(state, area), shoelacePt2(area.polygon))}
-                      </small>
-                    </span>
+<span>
+  <strong>{area.kind === 'store' ? area.code || '(no code)' : area.name}</strong>
+  <small>
+    {area.kind === 'store'
+      ? `店舗 · ${area.name}`
+      : formatArea(areaM2(state, area), shoelacePt2(area.polygon))}
+  </small>
+</span>
 ```
 
 - [ ] **Step 3: Edit store code in the selected panel**
@@ -899,15 +981,17 @@ Replace the `formatArea` usage row (the `<small>` line, ~101) so stores show the
 In the `selected` panel, after the `Business` `<label className="field">` select block, add a store-code editor shown only for stores. Insert before the `Copy area` button:
 
 ```tsx
-          {selected.kind === 'store' ? (
-            <label className="field">
-              <span>Store code</span>
-              <input
-                value={selected.code ?? ''}
-                onChange={(event) => state.setStoreCode(selected.id, event.target.value)}
-              />
-            </label>
-          ) : null}
+{
+  selected.kind === 'store' ? (
+    <label className="field">
+      <span>Store code</span>
+      <input
+        value={selected.code ?? ''}
+        onChange={(event) => state.setStoreCode(selected.id, event.target.value)}
+      />
+    </label>
+  ) : null
+}
 ```
 
 Also change the `Business` label text to `施設名`:
@@ -924,13 +1008,13 @@ from "Business" to 施設名, and add a 店舗 (stores) column is out of scope h
 keep the existing columns but relabel. Replace the empty `<p>`:
 
 ```tsx
-          <p className="empty">Measured facilities will appear here before export.</p>
+<p className="empty">Measured facilities will appear here before export.</p>
 ```
 
 and the first `<th>`:
 
 ```tsx
-                <th>施設名</th>
+<th>施設名</th>
 ```
 
 - [ ] **Step 5: Add prefix-input styling**
@@ -962,10 +1046,12 @@ git commit -m "feat: sidebar facility rename, prefix input and store code editin
 ### Task 7: Canvas store labels + level in toolbar
 
 **Files:**
+
 - Modify: `src/renderer/src/components/PdfStage.tsx` (drawPolygon label)
 - Modify: `src/renderer/src/components/Toolbar.tsx` (page indicator shows level)
 
 **Interfaces:**
+
 - Consumes: `Area.kind/code`, `PageState.label`.
 
 - [ ] **Step 1: Store labels on the canvas**
@@ -973,11 +1059,11 @@ git commit -m "feat: sidebar facility rename, prefix input and store code editin
 In `src/renderer/src/components/PdfStage.tsx`, in `drawPolygon`, replace the `lines` computation (line ~206):
 
 ```ts
-      const scaled = areaM2(state, area)
-      const lines =
-        area.kind === 'store'
-          ? [area.code || '—']
-          : [area.name, scaled == null ? 'unscaled' : `${scaled.toFixed(2)} m²`]
+const scaled = areaM2(state, area)
+const lines =
+  area.kind === 'store'
+    ? [area.code || '—']
+    : [area.name, scaled == null ? 'unscaled' : `${scaled.toFixed(2)} m²`]
 ```
 
 - [ ] **Step 2: Show the level in the Toolbar page indicator**
@@ -985,15 +1071,15 @@ In `src/renderer/src/components/PdfStage.tsx`, in `drawPolygon`, replace the `li
 In `src/renderer/src/components/Toolbar.tsx`, add a selector for the active page label:
 
 ```ts
-  const pageLabel = useAreaStore((s) => s.pages[s.activePageIndex]?.label ?? '')
+const pageLabel = useAreaStore((s) => s.pages[s.activePageIndex]?.label ?? '')
 ```
 
 Replace the page `toolbar__label` span:
 
 ```tsx
-        <span className="toolbar__label">
-          {pageCount ? `${pageLabel} · ` : ''}Page {pageCount ? pageIndex + 1 : 0}/{pageCount}
-        </span>
+<span className="toolbar__label">
+  {pageCount ? `${pageLabel} · ` : ''}Page {pageCount ? pageIndex + 1 : 0}/{pageCount}
+</span>
 ```
 
 - [ ] **Step 3: Verify**
@@ -1014,10 +1100,12 @@ git commit -m "feat: store code canvas labels and level in the toolbar page indi
 ### Task 8: Copy/paste — re-code pasted stores
 
 **Files:**
+
 - Modify: `src/renderer/src/state/store.ts` (`pasteClipboard`)
 - Test: `src/renderer/src/state/store.spec.ts`
 
 **Interfaces:**
+
 - Consumes: `nextStoreCode` (Task 2), clipboard carry of `kind`/`code` (Task 1).
 
 - [ ] **Step 1: Write failing test**
@@ -1025,23 +1113,47 @@ git commit -m "feat: store code canvas labels and level in the toolbar page indi
 Add to `src/renderer/src/state/store.spec.ts`:
 
 ```ts
-  it('re-codes pasted stores and keeps pasted facility names', () => {
-    const store = createAreaStore({
-      pages,
-      names: ['A'],
-      prefixes: { A: 'ts' },
-      areas: [
-        { id: 'f', pageIndex: 0, kind: 'facility', name: 'A', polygon: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }] },
-        { id: 's', pageIndex: 0, kind: 'store', name: 'A', code: 'ts001', polygon: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }] }
-      ]
-    })
-    // copy the store, paste it — it must get a fresh code, not ts001 again
-    store.getState().selectArea('s')
-    store.getState().copySelectedArea()
-    store.getState().pasteClipboard()
-    const codes = store.getState().areas.filter((a) => a.kind === 'store').map((a) => a.code)
-    expect(codes).toEqual(['ts001', 'ts002'])
+it('re-codes pasted stores and keeps pasted facility names', () => {
+  const store = createAreaStore({
+    pages,
+    names: ['A'],
+    prefixes: { A: 'ts' },
+    areas: [
+      {
+        id: 'f',
+        pageIndex: 0,
+        kind: 'facility',
+        name: 'A',
+        polygon: [
+          { x: 0, y: 0 },
+          { x: 1, y: 0 },
+          { x: 1, y: 1 }
+        ]
+      },
+      {
+        id: 's',
+        pageIndex: 0,
+        kind: 'store',
+        name: 'A',
+        code: 'ts001',
+        polygon: [
+          { x: 0, y: 0 },
+          { x: 1, y: 0 },
+          { x: 1, y: 1 }
+        ]
+      }
+    ]
   })
+  // copy the store, paste it — it must get a fresh code, not ts001 again
+  store.getState().selectArea('s')
+  store.getState().copySelectedArea()
+  store.getState().pasteClipboard()
+  const codes = store
+    .getState()
+    .areas.filter((a) => a.kind === 'store')
+    .map((a) => a.code)
+  expect(codes).toEqual(['ts001', 'ts002'])
+})
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -1053,30 +1165,30 @@ Run: `npx vitest run src/renderer/src/state/store.spec.ts` — Expected: FAIL (p
 In `src/renderer/src/state/store.ts`, replace the `pasted` mapping in `pasteClipboard` so store codes advance. Because each new store must count against the ones already added in this same paste, build the array imperatively:
 
 ```ts
-      const pasted: Area[] = []
-      const working = { areas: [...state.areas], prefixes: state.prefixes }
-      for (const copied of state.clipboard) {
-        const area: Area =
-          copied.kind === 'store'
-            ? {
-                id: crypto.randomUUID(),
-                pageIndex,
-                kind: 'store',
-                name: copied.name,
-                code: nextStoreCode(working, copied.name),
-                polygon: clonePolygon(copied.polygon)
-              }
-            : {
-                id: crypto.randomUUID(),
-                pageIndex,
-                kind: 'facility',
-                name: copied.name,
-                code: copied.code,
-                polygon: clonePolygon(copied.polygon)
-              }
-        pasted.push(area)
-        working.areas.push(area)
-      }
+const pasted: Area[] = []
+const working = { areas: [...state.areas], prefixes: state.prefixes }
+for (const copied of state.clipboard) {
+  const area: Area =
+    copied.kind === 'store'
+      ? {
+          id: crypto.randomUUID(),
+          pageIndex,
+          kind: 'store',
+          name: copied.name,
+          code: nextStoreCode(working, copied.name),
+          polygon: clonePolygon(copied.polygon)
+        }
+      : {
+          id: crypto.randomUUID(),
+          pageIndex,
+          kind: 'facility',
+          name: copied.name,
+          code: copied.code,
+          polygon: clonePolygon(copied.polygon)
+        }
+  pasted.push(area)
+  working.areas.push(area)
+}
 ```
 
 (The `working` accumulator makes `nextStoreCode` see stores added earlier in the same paste, so multiple pasted stores get sequential codes.)
@@ -1100,12 +1212,14 @@ git commit -m "feat: re-code pasted stores to avoid duplicate codes"
 ### Task 9: Three-section report renderer
 
 **Files:**
+
 - Create: `src/renderer/src/report/reportImage.ts`
 - Create: `src/renderer/src/report/reportImage.spec.ts`
 - Delete: `src/renderer/src/report/tableImage.ts`, `src/renderer/src/report/tableImage.spec.ts`
 - Modify: `src/renderer/src/App.tsx` (`generateReport`)
 
 **Interfaces:**
+
 - Consumes: `reportByLevel`/`reportByFacility`/`reportByFacilityLevel` (Task 4).
 - Produces: `renderReportPng(state, title): Promise<Uint8Array>` where `state: Pick<AppState,'areas'|'pages'>`.
 
@@ -1122,11 +1236,24 @@ import type { AppState } from '../state/types'
 // jsdom canvas.toBlob is not implemented; stub it to return bytes.
 function stubCanvas(): void {
   HTMLCanvasElement.prototype.getContext = vi.fn(() => ({
-    scale: vi.fn(), fillRect: vi.fn(), strokeRect: vi.fn(), fillText: vi.fn(),
-    measureText: vi.fn(() => ({ width: 40 })), beginPath: vi.fn(), moveTo: vi.fn(),
-    lineTo: vi.fn(), stroke: vi.fn(), fill: vi.fn(), save: vi.fn(), restore: vi.fn(),
-    set fillStyle(_v) {}, set strokeStyle(_v) {}, set font(_v) {}, set textAlign(_v) {},
-    set textBaseline(_v) {}, set lineWidth(_v) {}
+    scale: vi.fn(),
+    fillRect: vi.fn(),
+    strokeRect: vi.fn(),
+    fillText: vi.fn(),
+    measureText: vi.fn(() => ({ width: 40 })),
+    beginPath: vi.fn(),
+    moveTo: vi.fn(),
+    lineTo: vi.fn(),
+    stroke: vi.fn(),
+    fill: vi.fn(),
+    save: vi.fn(),
+    restore: vi.fn(),
+    set fillStyle(_v) {},
+    set strokeStyle(_v) {},
+    set font(_v) {},
+    set textAlign(_v) {},
+    set textBaseline(_v) {},
+    set lineWidth(_v) {}
   })) as unknown as typeof HTMLCanvasElement.prototype.getContext
   HTMLCanvasElement.prototype.toBlob = function (cb: BlobCallback) {
     cb(new Blob([new Uint8Array([1, 2, 3])], { type: 'image/png' }))
@@ -1139,7 +1266,18 @@ describe('renderReportPng', () => {
     const state = {
       pages: [{ pageIndex: 0, label: '1F', scale: { kind: 'custom', mmPerPt: 10 } }],
       areas: [
-        { id: 'f', pageIndex: 0, kind: 'facility', name: 'A', polygon: [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 }] },
+        {
+          id: 'f',
+          pageIndex: 0,
+          kind: 'facility',
+          name: 'A',
+          polygon: [
+            { x: 0, y: 0 },
+            { x: 10, y: 0 },
+            { x: 10, y: 10 },
+            { x: 0, y: 10 }
+          ]
+        },
         { id: 's', pageIndex: 0, kind: 'store', name: 'A', code: 'ts001', polygon: [] }
       ]
     } as Pick<AppState, 'areas' | 'pages'>
@@ -1233,7 +1371,10 @@ export async function renderReportPng(
   const width = tableW + margin * 2
   const height =
     titleH +
-    sections.reduce((sum, s) => sum + sectionTitleH + headerH + rowH * s.rows.length + sectionGap, 0) +
+    sections.reduce(
+      (sum, s) => sum + sectionTitleH + headerH + rowH * s.rows.length + sectionGap,
+      0
+    ) +
     margin
 
   const canvas = document.createElement('canvas')
@@ -1283,7 +1424,11 @@ export async function renderReportPng(
       ctx.fillStyle = '#111827'
       for (const col of section.cols) {
         ctx.textAlign = col.align ?? 'left'
-        ctx.fillText(col.value(row), col.align === 'right' ? x + col.width - 12 : x + 12, y + rowH / 2)
+        ctx.fillText(
+          col.value(row),
+          col.align === 'right' ? x + col.width - 12 : x + 12,
+          y + rowH / 2
+        )
         x += col.width
       }
       y += rowH
@@ -1292,7 +1437,10 @@ export async function renderReportPng(
   }
 
   const blob = await new Promise<Blob>((resolve, reject) => {
-    canvas.toBlob((result) => (result ? resolve(result) : reject(new Error('PNG rendering failed'))), 'image/png')
+    canvas.toBlob(
+      (result) => (result ? resolve(result) : reject(new Error('PNG rendering failed'))),
+      'image/png'
+    )
   })
   return new Uint8Array(await blob.arrayBuffer())
 }
@@ -1309,27 +1457,27 @@ import { renderReportPng } from './report/reportImage'
 (remove the `renderTablePng` import). Replace the body of `generateReport` from the `const rows = aggregate(state)` line through the `renderTablePng` call:
 
 ```ts
-    const state = areaStore.getState()
-    if (!state.originalBytes) {
-      showToast('Open a PDF before generating a report')
-      return
-    }
-    if (!state.areas.length) return
-    const unscaledCount = state.areas.filter(
-      (area) => area.kind === 'facility' && mmPerPtFor(state, area.pageIndex) == null
-    ).length
-    if (unscaledCount > 0) {
-      const ok = window.confirm(
-        `${unscaledCount} facility polygons are on unscaled pages and will be reported in pt², not m². Continue?`
-      )
-      if (!ok) return
-    }
-    const title = `面積集計 — ${state.fileName ?? 'PDF'}`
-    const png = await renderReportPng(state, title)
-    const pdf = await buildReportPdf(state.originalBytes, png, state.areas, state.colors)
-    const defaultName = `${withoutExt(state.fileName ?? 'pdf')}_areas.pdf`
-    const saved = await window.api.savePdf(pdf, defaultName)
-    if (saved) showToast(`Report saved to ${baseName(saved)}`)
+const state = areaStore.getState()
+if (!state.originalBytes) {
+  showToast('Open a PDF before generating a report')
+  return
+}
+if (!state.areas.length) return
+const unscaledCount = state.areas.filter(
+  (area) => area.kind === 'facility' && mmPerPtFor(state, area.pageIndex) == null
+).length
+if (unscaledCount > 0) {
+  const ok = window.confirm(
+    `${unscaledCount} facility polygons are on unscaled pages and will be reported in pt², not m². Continue?`
+  )
+  if (!ok) return
+}
+const title = `面積集計 — ${state.fileName ?? 'PDF'}`
+const png = await renderReportPng(state, title)
+const pdf = await buildReportPdf(state.originalBytes, png, state.areas, state.colors)
+const defaultName = `${withoutExt(state.fileName ?? 'pdf')}_areas.pdf`
+const saved = await window.api.savePdf(pdf, defaultName)
+if (saved) showToast(`Report saved to ${baseName(saved)}`)
 ```
 
 Remove the now-unused `aggregate` import from App.tsx if present (it is: `aggregate` is imported from `./state/store` — drop it from that import list).
@@ -1359,11 +1507,13 @@ git commit -m "feat: three-section report renderer replacing the single table"
 ### Task 10: Legend state, actions & membership selector
 
 **Files:**
+
 - Modify: `src/renderer/src/state/types.ts` (`LegendEntry`)
 - Modify: `src/renderer/src/state/store.ts` (`setLegendPos`, `setLegendVisible`, `facilitiesOnPage`)
 - Test: `src/renderer/src/state/store.spec.ts`
 
 **Interfaces:**
+
 - Produces: `LegendEntry { name: string; color: string }`; `setLegendPos(pos: Pt): void`; `setLegendVisible(visible: boolean): void`; `facilitiesOnPage(state, pageIndex): LegendEntry[]`.
 
 - [ ] **Step 1: Add the LegendEntry type**
@@ -1382,25 +1532,25 @@ export interface LegendEntry {
 Add to `src/renderer/src/state/store.spec.ts`:
 
 ```ts
-  it('lists facilities on a page (any area) and legend state actions', () => {
-    const store = createAreaStore({
-      pages,
-      names: ['A', 'B'],
-      areas: [
-        square(0, 'A'), // facility on page 0
-        { id: 's', pageIndex: 0, kind: 'store', name: 'B', code: 'b001', polygon: [] } // only a store for B on page 0
-      ]
-    })
-    const entries = facilitiesOnPage(store.getState(), 0)
-    expect(entries.map((e) => e.name)).toEqual(['A', 'B'])
-    expect(entries[0].color).toMatch(/^#[0-9a-f]{6}$/i)
-    expect(facilitiesOnPage(store.getState(), 1)).toEqual([])
-
-    store.getState().setLegendPos({ x: 5, y: 9 })
-    expect(store.getState().legendPos).toEqual({ x: 5, y: 9 })
-    store.getState().setLegendVisible(false)
-    expect(store.getState().legendVisible).toBe(false)
+it('lists facilities on a page (any area) and legend state actions', () => {
+  const store = createAreaStore({
+    pages,
+    names: ['A', 'B'],
+    areas: [
+      square(0, 'A'), // facility on page 0
+      { id: 's', pageIndex: 0, kind: 'store', name: 'B', code: 'b001', polygon: [] } // only a store for B on page 0
+    ]
   })
+  const entries = facilitiesOnPage(store.getState(), 0)
+  expect(entries.map((e) => e.name)).toEqual(['A', 'B'])
+  expect(entries[0].color).toMatch(/^#[0-9a-f]{6}$/i)
+  expect(facilitiesOnPage(store.getState(), 1)).toEqual([])
+
+  store.getState().setLegendPos({ x: 5, y: 9 })
+  expect(store.getState().legendPos).toEqual({ x: 5, y: 9 })
+  store.getState().setLegendVisible(false)
+  expect(store.getState().legendVisible).toBe(false)
+})
 ```
 
 Add `facilitiesOnPage` to the spec import from `./store`.
@@ -1419,7 +1569,9 @@ export function facilitiesOnPage(
   pageIndex: number
 ): LegendEntry[] {
   return state.names
-    .filter((name) => state.areas.some((area) => area.pageIndex === pageIndex && area.name.trim() === name))
+    .filter((name) =>
+      state.areas.some((area) => area.pageIndex === pageIndex && area.name.trim() === name)
+    )
     .map((name) => ({ name, color: colorForBusiness(state, name) }))
 }
 ```
@@ -1460,10 +1612,12 @@ git commit -m "feat: legend state actions and per-page facility membership selec
 ### Task 11: Draggable legend overlay + visibility toggle
 
 **Files:**
+
 - Modify: `src/renderer/src/components/PdfStage.tsx` (draw legend + drag)
 - Modify: `src/renderer/src/components/Toolbar.tsx` (legend toggle)
 
 **Interfaces:**
+
 - Consumes: `facilitiesOnPage`, `legendPos`/`legendVisible`, `setLegendPos` (Task 10).
 
 **Legend geometry helper (shared shape):** the legend box top-left is `legendPos` in PDF points (or a default). Rows are `swatch + name`. These constants live in PdfStage:
@@ -1493,40 +1647,43 @@ export function defaultLegendPos(viewport: PageViewport): Pt {
 In the overlay-drawing `useEffect` (the one that calls `drawPolygon`), after the `pageAreas.forEach((area) => drawPolygon(...))` line and before the `draft` block, add legend rendering. Compute entries from the store selector:
 
 ```ts
-    if (legendVisible) {
-      const entries = facilitiesOnPage(state, activePageIndex)
-      if (entries.length) {
-        const topLeftPdf = legendPos ?? defaultLegendPos(viewport)
-        const tl = viewportPt(viewport, topLeftPdf)
-        const boxW = legendEntriesWidth(ctx, entries.map((e) => e.name))
-        const boxH = LEGEND.padding * 2 + entries.length * LEGEND.rowH
-        ctx.save()
-        ctx.fillStyle = 'rgba(255,255,255,0.9)'
-        ctx.strokeStyle = '#9ca3af'
-        ctx.lineWidth = 1
-        ctx.fillRect(tl.x, tl.y, boxW, boxH)
-        ctx.strokeRect(tl.x, tl.y, boxW, boxH)
-        ctx.font = `${LEGEND.font}px "Yu Gothic UI", system-ui, sans-serif`
-        ctx.textAlign = 'left'
-        ctx.textBaseline = 'middle'
-        entries.forEach((entry, i) => {
-          const rowY = tl.y + LEGEND.padding + i * LEGEND.rowH + LEGEND.rowH / 2
-          ctx.fillStyle = entry.color
-          ctx.fillRect(tl.x + LEGEND.padding, rowY - LEGEND.swatch / 2, LEGEND.swatch, LEGEND.swatch)
-          ctx.fillStyle = '#111827'
-          ctx.fillText(entry.name, tl.x + LEGEND.padding + LEGEND.swatch + LEGEND.gap, rowY)
-        })
-        ctx.restore()
-      }
-    }
+if (legendVisible) {
+  const entries = facilitiesOnPage(state, activePageIndex)
+  if (entries.length) {
+    const topLeftPdf = legendPos ?? defaultLegendPos(viewport)
+    const tl = viewportPt(viewport, topLeftPdf)
+    const boxW = legendEntriesWidth(
+      ctx,
+      entries.map((e) => e.name)
+    )
+    const boxH = LEGEND.padding * 2 + entries.length * LEGEND.rowH
+    ctx.save()
+    ctx.fillStyle = 'rgba(255,255,255,0.9)'
+    ctx.strokeStyle = '#9ca3af'
+    ctx.lineWidth = 1
+    ctx.fillRect(tl.x, tl.y, boxW, boxH)
+    ctx.strokeRect(tl.x, tl.y, boxW, boxH)
+    ctx.font = `${LEGEND.font}px "Yu Gothic UI", system-ui, sans-serif`
+    ctx.textAlign = 'left'
+    ctx.textBaseline = 'middle'
+    entries.forEach((entry, i) => {
+      const rowY = tl.y + LEGEND.padding + i * LEGEND.rowH + LEGEND.rowH / 2
+      ctx.fillStyle = entry.color
+      ctx.fillRect(tl.x + LEGEND.padding, rowY - LEGEND.swatch / 2, LEGEND.swatch, LEGEND.swatch)
+      ctx.fillStyle = '#111827'
+      ctx.fillText(entry.name, tl.x + LEGEND.padding + LEGEND.swatch + LEGEND.gap, rowY)
+    })
+    ctx.restore()
+  }
+}
 ```
 
 Add `legendVisible`, `legendPos`, and `facilitiesOnPage` to the component: selectors near the others —
 
 ```ts
-  const legendVisible = useAreaStore((s) => s.legendVisible)
-  const legendPos = useAreaStore((s) => s.legendPos)
-  const setLegendPos = useAreaStore((s) => s.setLegendPos)
+const legendVisible = useAreaStore((s) => s.legendVisible)
+const legendPos = useAreaStore((s) => s.legendPos)
+const setLegendPos = useAreaStore((s) => s.setLegendPos)
 ```
 
 and import `facilitiesOnPage` and `defaultLegendPos` usage (facilitiesOnPage from store; defaultLegendPos is local). Add `facilitiesOnPage` to the store import line. Add `legendVisible`, `legendPos` to that `useEffect`'s dependency array.
@@ -1538,40 +1695,43 @@ Extend `DragState.kind` to include `'legend'` and add a `startPt` reuse. In `Dra
 Add a legend hit-test helper (after `findMidpointHit`):
 
 ```ts
-  const legendBounds = (): { x: number; y: number; w: number; h: number } | null => {
-    if (!viewport || !legendVisible) return null
-    const entries = facilitiesOnPage(state, activePageIndex)
-    if (!entries.length) return null
-    const ctx = overlayRef.current?.getContext('2d')
-    if (!ctx) return null
-    const tl = viewportPt(viewport, legendPos ?? defaultLegendPos(viewport))
-    const w = legendEntriesWidth(ctx, entries.map((e) => e.name))
-    const h = LEGEND.padding * 2 + entries.length * LEGEND.rowH
-    return { x: tl.x, y: tl.y, w, h }
-  }
+const legendBounds = (): { x: number; y: number; w: number; h: number } | null => {
+  if (!viewport || !legendVisible) return null
+  const entries = facilitiesOnPage(state, activePageIndex)
+  if (!entries.length) return null
+  const ctx = overlayRef.current?.getContext('2d')
+  if (!ctx) return null
+  const tl = viewportPt(viewport, legendPos ?? defaultLegendPos(viewport))
+  const w = legendEntriesWidth(
+    ctx,
+    entries.map((e) => e.name)
+  )
+  const h = LEGEND.padding * 2 + entries.length * LEGEND.rowH
+  return { x: tl.x, y: tl.y, w, h }
+}
 ```
 
 In `onPointerDown`, immediately after the pan check (`if (shouldPanPointer(...)) { ... return }`) and before `const pdfPt = ...` is used by the calibration/tool branches, add a legend grab. Insert right after the `viewportPoint` is computed (`const viewportPoint = eventToViewportPt(event.nativeEvent, canvas)`):
 
 ```ts
-    const bounds = legendBounds()
-    if (
-      bounds &&
-      viewportPoint.x >= bounds.x &&
-      viewportPoint.x <= bounds.x + bounds.w &&
-      viewportPoint.y >= bounds.y &&
-      viewportPoint.y <= bounds.y + bounds.h
-    ) {
-      setDrag({
-        kind: 'legend',
-        startClient: { x: event.clientX, y: event.clientY },
-        startPan: pan,
-        startPt: pdfPt,
-        startLegendPos: legendPos ?? defaultLegendPos(viewport),
-        moved: false
-      })
-      return
-    }
+const bounds = legendBounds()
+if (
+  bounds &&
+  viewportPoint.x >= bounds.x &&
+  viewportPoint.x <= bounds.x + bounds.w &&
+  viewportPoint.y >= bounds.y &&
+  viewportPoint.y <= bounds.y + bounds.h
+) {
+  setDrag({
+    kind: 'legend',
+    startClient: { x: event.clientX, y: event.clientY },
+    startPan: pan,
+    startPt: pdfPt,
+    startLegendPos: legendPos ?? defaultLegendPos(viewport),
+    moved: false
+  })
+  return
+}
 ```
 
 (`DragState` gains an optional `startLegendPos?: Pt` field for this.)
@@ -1581,15 +1741,15 @@ pointer movement as a delta from the grabbed position so the box keeps its grab
 offset (mirroring area drag), rather than snapping its top-left to the cursor:
 
 ```ts
-    if (drag.kind === 'legend' && drag.startPt && drag.startLegendPos) {
-      if (moved) {
-        setLegendPos({
-          x: drag.startLegendPos.x + (pdfPt.x - drag.startPt.x),
-          y: drag.startLegendPos.y + (pdfPt.y - drag.startPt.y)
-        })
-      }
-      setDrag({ ...drag, moved })
-    }
+if (drag.kind === 'legend' && drag.startPt && drag.startLegendPos) {
+  if (moved) {
+    setLegendPos({
+      x: drag.startLegendPos.x + (pdfPt.x - drag.startPt.x),
+      y: drag.startLegendPos.y + (pdfPt.y - drag.startPt.y)
+    })
+  }
+  setDrag({ ...drag, moved })
+}
 ```
 
 - [ ] **Step 4: Toolbar legend toggle**
@@ -1597,20 +1757,20 @@ offset (mirroring area drag), rather than snapping its top-left to the cursor:
 In `src/renderer/src/components/Toolbar.tsx`, add selectors:
 
 ```ts
-  const legendVisible = useAreaStore((s) => s.legendVisible)
-  const setLegendVisible = useAreaStore((s) => s.setLegendVisible)
+const legendVisible = useAreaStore((s) => s.legendVisible)
+const setLegendVisible = useAreaStore((s) => s.setLegendVisible)
 ```
 
 Add a button in the end group (next to Shortcuts):
 
 ```tsx
-        <button
-          type="button"
-          className={legendVisible ? 'is-active' : ''}
-          onClick={() => setLegendVisible(!legendVisible)}
-        >
-          Legend
-        </button>
+<button
+  type="button"
+  className={legendVisible ? 'is-active' : ''}
+  onClick={() => setLegendVisible(!legendVisible)}
+>
+  Legend
+</button>
 ```
 
 - [ ] **Step 5: Verify**
@@ -1631,12 +1791,14 @@ git commit -m "feat: draggable per-page facility legend overlay with toolbar tog
 ### Task 12: Legend in the exported PDF
 
 **Files:**
+
 - Create: `src/renderer/src/report/legendImage.ts`
 - Create: `src/renderer/src/report/legendImage.spec.ts`
 - Modify: `src/renderer/src/report/buildReport.ts`
 - Modify: `src/renderer/src/App.tsx` (pass legend state to `buildReportPdf`)
 
 **Interfaces:**
+
 - Consumes: `facilitiesOnPage`, `LegendEntry`, `legendPos`/`legendVisible`.
 - Produces: `renderLegendPng(entries: LegendEntry[]): Promise<{ png: Uint8Array; width: number; height: number }>`; `buildReportPdf(originalBytes, png, areas, colors, legend)` extended signature.
 
@@ -1651,10 +1813,17 @@ import { renderLegendPng } from './legendImage'
 
 function stubCanvas(): void {
   HTMLCanvasElement.prototype.getContext = vi.fn(() => ({
-    scale: vi.fn(), fillRect: vi.fn(), strokeRect: vi.fn(), fillText: vi.fn(),
+    scale: vi.fn(),
+    fillRect: vi.fn(),
+    strokeRect: vi.fn(),
+    fillText: vi.fn(),
     measureText: vi.fn(() => ({ width: 40 })),
-    set fillStyle(_v) {}, set strokeStyle(_v) {}, set font(_v) {}, set textAlign(_v) {},
-    set textBaseline(_v) {}, set lineWidth(_v) {}
+    set fillStyle(_v) {},
+    set strokeStyle(_v) {},
+    set font(_v) {},
+    set textAlign(_v) {},
+    set textBaseline(_v) {},
+    set lineWidth(_v) {}
   })) as unknown as typeof HTMLCanvasElement.prototype.getContext
   HTMLCanvasElement.prototype.toBlob = function (cb: BlobCallback) {
     cb(new Blob([new Uint8Array([9, 9, 9])], { type: 'image/png' }))
@@ -1664,7 +1833,10 @@ function stubCanvas(): void {
 describe('renderLegendPng', () => {
   it('renders a non-empty PNG with positive dimensions', async () => {
     stubCanvas()
-    const out = await renderLegendPng([{ name: 'A', color: '#2563eb' }, { name: 'B', color: '#dc2626' }])
+    const out = await renderLegendPng([
+      { name: 'A', color: '#2563eb' },
+      { name: 'B', color: '#dc2626' }
+    ])
     expect(out.png.length).toBeGreaterThan(0)
     expect(out.width).toBeGreaterThan(0)
     expect(out.height).toBeGreaterThan(0)
@@ -1729,7 +1901,10 @@ export async function renderLegendPng(entries: LegendEntry[]): Promise<LegendPng
   })
 
   const blob = await new Promise<Blob>((resolve, reject) => {
-    canvas.toBlob((result) => (result ? resolve(result) : reject(new Error('PNG rendering failed'))), 'image/png')
+    canvas.toBlob(
+      (result) => (result ? resolve(result) : reject(new Error('PNG rendering failed'))),
+      'image/png'
+    )
   })
   return { png: new Uint8Array(await blob.arrayBuffer()), width, height }
 }
@@ -1840,11 +2015,11 @@ import { areaStore, facilitiesOnPage, mmPerPtFor, useAreaStore } from './state/s
 Update the `buildReportPdf` call in `generateReport`:
 
 ```ts
-    const pdf = await buildReportPdf(state.originalBytes, png, state.areas, state.colors, {
-      visible: state.legendVisible,
-      pos: state.legendPos,
-      entriesForPage: (pageIndex) => facilitiesOnPage(state, pageIndex)
-    })
+const pdf = await buildReportPdf(state.originalBytes, png, state.areas, state.colors, {
+  visible: state.legendVisible,
+  pos: state.legendPos,
+  entriesForPage: (pageIndex) => facilitiesOnPage(state, pageIndex)
+})
 ```
 
 - [ ] **Step 6: Run tests + typecheck**

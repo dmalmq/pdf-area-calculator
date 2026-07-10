@@ -26,7 +26,9 @@ describe('renderReportPng', () => {
       width: 0,
       height: 0,
       getContext: vi.fn(() => ctx),
-      toBlob: vi.fn((callback: BlobCallback) => callback(new Blob([new Uint8Array([1, 2, 3])], { type: 'image/png' })))
+      toBlob: vi.fn((callback: BlobCallback) =>
+        callback(new Blob([new Uint8Array([1, 2, 3])], { type: 'image/png' }))
+      )
     }
     vi.stubGlobal('document', { createElement: vi.fn(() => canvas) })
 
@@ -34,7 +36,18 @@ describe('renderReportPng', () => {
       pages: [{ pageIndex: 0, label: '1F', scale: { kind: 'custom', mmPerPt: 10 } }],
       areas: [
         // facility square 10x10 pt @ 10 mm/pt = 0.01 m²
-        { id: 'f', pageIndex: 0, kind: 'facility', name: 'A', polygon: [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 }] },
+        {
+          id: 'f',
+          pageIndex: 0,
+          kind: 'facility',
+          name: 'A',
+          polygon: [
+            { x: 0, y: 0 },
+            { x: 10, y: 0 },
+            { x: 10, y: 10 },
+            { x: 0, y: 10 }
+          ]
+        },
         { id: 's1', pageIndex: 0, kind: 'store', name: 'A', code: 'ts001', polygon: [] },
         { id: 's2', pageIndex: 0, kind: 'store', name: 'A', code: 'ts002', polygon: [] }
       ]

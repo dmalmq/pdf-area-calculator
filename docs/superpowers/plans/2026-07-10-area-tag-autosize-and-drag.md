@@ -37,12 +37,14 @@
 ## Task 1: State + persistence
 
 **Files:**
+
 - Modify: `src/renderer/src/state/types.ts`
 - Modify: `src/renderer/src/state/store.ts` (`AreaStore` interface ~line 61; `initialState` ~line 71-94; `importProject` ~line 464-489; new actions after `setAreaPolygon` ~line 556)
 - Modify: `src/renderer/src/App.tsx` (`saveProject` `ProjectFile` literal ~line 72-85)
 - Test: `src/renderer/src/state/store.spec.ts`
 
 **Interfaces:**
+
 - Produces: `Area.labelOffset?: Pt`; `StoreLabelMode = 'code' | 'number' | 'off'`; `AppState.storeLabelMode: StoreLabelMode`; `AreaStore.setAreaLabelOffset(id: string, offset: Pt): void`; `AreaStore.setStoreLabelMode(mode: StoreLabelMode): void`.
 
 - [ ] **Step 1: Write the failing tests**
@@ -50,63 +52,66 @@
 Add to `src/renderer/src/state/store.spec.ts` (uses existing `pages`, `square`, `createAreaStore`):
 
 ```ts
-  it('sets a per-area label offset without touching other areas', () => {
-    const a = square(0, 'A')
-    const b = square(0, 'B')
-    const store = createAreaStore({ areas: [a, b] })
+it('sets a per-area label offset without touching other areas', () => {
+  const a = square(0, 'A')
+  const b = square(0, 'B')
+  const store = createAreaStore({ areas: [a, b] })
 
-    store.getState().setAreaLabelOffset(a.id, { x: 5, y: -3 })
+  store.getState().setAreaLabelOffset(a.id, { x: 5, y: -3 })
 
-    expect(store.getState().areas.find((area) => area.id === a.id)?.labelOffset).toEqual({ x: 5, y: -3 })
-    expect(store.getState().areas.find((area) => area.id === b.id)?.labelOffset).toBeUndefined()
+  expect(store.getState().areas.find((area) => area.id === a.id)?.labelOffset).toEqual({
+    x: 5,
+    y: -3
   })
+  expect(store.getState().areas.find((area) => area.id === b.id)?.labelOffset).toBeUndefined()
+})
 
-  it('defaults and sets the store label mode', () => {
-    const store = createAreaStore({})
-    expect(store.getState().storeLabelMode).toBe('code')
-    store.getState().setStoreLabelMode('number')
-    expect(store.getState().storeLabelMode).toBe('number')
+it('defaults and sets the store label mode', () => {
+  const store = createAreaStore({})
+  expect(store.getState().storeLabelMode).toBe('code')
+  store.getState().setStoreLabelMode('number')
+  expect(store.getState().storeLabelMode).toBe('number')
+})
+
+it('preserves labelOffset and storeLabelMode through importProject, with defaults', () => {
+  const store = createAreaStore({})
+  store.getState().importProject({
+    pages,
+    names: ['A'],
+    areas: [
+      {
+        id: 'a1',
+        pageIndex: 0,
+        kind: 'facility',
+        name: 'A',
+        polygon: [
+          { x: 0, y: 0 },
+          { x: 1, y: 0 },
+          { x: 1, y: 1 }
+        ],
+        labelOffset: { x: 7, y: 8 }
+      },
+      {
+        id: 'a2',
+        pageIndex: 0,
+        kind: 'facility',
+        name: 'A',
+        polygon: [
+          { x: 0, y: 0 },
+          { x: 1, y: 0 },
+          { x: 1, y: 1 }
+        ]
+      }
+    ],
+    storeLabelMode: 'number'
   })
+  expect(store.getState().areas[0].labelOffset).toEqual({ x: 7, y: 8 })
+  expect(store.getState().areas[1].labelOffset).toBeUndefined()
+  expect(store.getState().storeLabelMode).toBe('number')
 
-  it('preserves labelOffset and storeLabelMode through importProject, with defaults', () => {
-    const store = createAreaStore({})
-    store.getState().importProject({
-      pages,
-      names: ['A'],
-      areas: [
-        {
-          id: 'a1',
-          pageIndex: 0,
-          kind: 'facility',
-          name: 'A',
-          polygon: [
-            { x: 0, y: 0 },
-            { x: 1, y: 0 },
-            { x: 1, y: 1 }
-          ],
-          labelOffset: { x: 7, y: 8 }
-        },
-        {
-          id: 'a2',
-          pageIndex: 0,
-          kind: 'facility',
-          name: 'A',
-          polygon: [
-            { x: 0, y: 0 },
-            { x: 1, y: 0 },
-            { x: 1, y: 1 }
-          ]
-        }
-      ],
-      storeLabelMode: 'number'
-    })
-    expect(store.getState().areas[0].labelOffset).toEqual({ x: 7, y: 8 })
-    expect(store.getState().areas[1].labelOffset).toBeUndefined()
-    expect(store.getState().storeLabelMode).toBe('number')
-
-    store.getState().importProject({ pages, names: ['A'], areas: [] })
-    expect(store.getState().storeLabelMode).toBe('code')
-  })
+  store.getState().importProject({ pages, names: ['A'], areas: [] })
+  expect(store.getState().storeLabelMode).toBe('code')
+})
 ```
 
 - [ ] **Step 2: Run the tests to verify they fail**
@@ -132,7 +137,7 @@ export type StoreLabelMode = 'code' | 'number' | 'off'
 Add to `interface AppState` (next to the legend fields):
 
 ```ts
-  storeLabelMode: StoreLabelMode
+storeLabelMode: StoreLabelMode
 ```
 
 Add to `interface ProjectFile` (next to `legendOrientation?`):
@@ -196,7 +201,7 @@ Add to `interface ProjectFile` (next to `legendOrientation?`):
 In the `ProjectFile` literal, add after `legendOrientation: state.legendOrientation`:
 
 ```ts
-      storeLabelMode: state.storeLabelMode
+storeLabelMode: state.storeLabelMode
 ```
 
 (add a trailing comma to the preceding line as needed).
@@ -223,10 +228,12 @@ git commit -m "feat: labelOffset + storeLabelMode state and persistence"
 ## Task 2: `storeTagLabel` pure helper
 
 **Files:**
+
 - Create: `src/renderer/src/state/storeLabel.ts`
 - Test: `src/renderer/src/state/storeLabel.spec.ts`
 
 **Interfaces:**
+
 - Consumes: `StoreLabelMode` (Task 1).
 - Produces: `export function storeTagLabel(code: string | undefined, prefix: string | undefined, mode: StoreLabelMode): string | null`. Used by Task 3 (canvas) and Task 5 (export).
 
@@ -318,10 +325,12 @@ git commit -m "feat: storeTagLabel helper (code/number/off)"
 ## Task 3: Auto-sized tag box + store label on canvas
 
 **Files:**
+
 - Modify: `src/renderer/src/components/PdfStage.tsx` (types import ~line 14; `TAG`/helpers near `const LEGEND = LEGEND_LAYOUT` ~line 81; tag draw block in `drawPolygon` ~lines 263-277)
 - Test: `src/renderer/src/components/PdfStage.spec.ts`
 
 **Interfaces:**
+
 - Consumes: `Area.labelOffset`, `AppState.storeLabelMode` (Task 1); `storeTagLabel` (Task 2).
 - Produces (module-level in `PdfStage.tsx`):
   - `export function tagBoxSize(lineWidths: number[]): { width: number; height: number }`
@@ -334,7 +343,13 @@ git commit -m "feat: storeTagLabel helper (code/number/off)"
 In `src/renderer/src/components/PdfStage.spec.ts`, update the import on line 3:
 
 ```ts
-import { anchoredZoomScroll, constrainDelta, doubleClickAction, shouldPanPointer, tagBoxSize } from './PdfStage'
+import {
+  anchoredZoomScroll,
+  constrainDelta,
+  doubleClickAction,
+  shouldPanPointer,
+  tagBoxSize
+} from './PdfStage'
 ```
 
 Add at the end of the file:
@@ -392,7 +407,10 @@ export function tagBoxSize(lineWidths: number[]): { width: number; height: numbe
 
 // Lines for an area's tag. Facility → name + area. Store → its display label
 // (code/number), or [] when the store label is off (no tag drawn).
-function tagLines(area: Area, state: Pick<AppState, 'pages' | 'prefixes' | 'storeLabelMode'>): string[] {
+function tagLines(
+  area: Area,
+  state: Pick<AppState, 'pages' | 'prefixes' | 'storeLabelMode'>
+): string[] {
   if (area.kind === 'store') {
     const label = storeTagLabel(area.code, state.prefixes[area.name], state.storeLabelMode)
     return label == null ? [] : [label]
@@ -428,20 +446,20 @@ function tagRect(
 Replace the tag block (from `const labelPt = viewportPt(viewport, centroid(area.polygon))` through the final `lines.forEach(... labelPt.y - 7 + index * 15)`) with:
 
 ```ts
-      const rect = tagRect(area, ctx, viewport, state)
-      if (rect) {
-        ctx.font = `${TAG.weight} ${TAG.font}px ${REPORT_FONT_FAMILY}`
-        ctx.textAlign = 'center'
-        ctx.textBaseline = 'middle'
-        ctx.fillStyle = '#111827'
-        ctx.fillRect(rect.x, rect.y, rect.w, rect.h)
-        ctx.strokeStyle = '#ffffff'
-        ctx.strokeRect(rect.x, rect.y, rect.w, rect.h)
-        ctx.fillStyle = '#ffffff'
-        rect.lines.forEach((line, index) =>
-          ctx.fillText(line, rect.x + rect.w / 2, rect.y + TAG.padY + TAG.lineH / 2 + index * TAG.lineH)
-        )
-      }
+const rect = tagRect(area, ctx, viewport, state)
+if (rect) {
+  ctx.font = `${TAG.weight} ${TAG.font}px ${REPORT_FONT_FAMILY}`
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  ctx.fillStyle = '#111827'
+  ctx.fillRect(rect.x, rect.y, rect.w, rect.h)
+  ctx.strokeStyle = '#ffffff'
+  ctx.strokeRect(rect.x, rect.y, rect.w, rect.h)
+  ctx.fillStyle = '#ffffff'
+  rect.lines.forEach((line, index) =>
+    ctx.fillText(line, rect.x + rect.w / 2, rect.y + TAG.padY + TAG.lineH / 2 + index * TAG.lineH)
+  )
+}
 ```
 
 - [ ] **Step 6: Run the test to verify it passes**
@@ -466,9 +484,11 @@ git commit -m "feat: auto-size tag box and apply store label mode on canvas"
 ## Task 4: Draggable tags in Edit tool + double-click reset
 
 **Files:**
+
 - Modify: `src/renderer/src/components/PdfStage.tsx` (`DragState` ~lines 30-40; `setAreaLabelOffset` selector ~line 161; `findTagAt` after `findAreaAt` ~line 419; edit branch of `onPointerDown` ~line 500; `onPointerMove` after the legend branch ~line 614; `onDoubleClick` ~line 622)
 
 **Interfaces:**
+
 - Consumes: `tagRect` (Task 3), `setAreaLabelOffset` + `Area.labelOffset` (Task 1), existing `eventToViewportPt`, `findAreaAt`, `doubleClickAction`.
 - Produces: internal `findTagAt(viewportPoint: Pt): Area | null`; `DragState` `'label'` kind.
 
@@ -494,7 +514,7 @@ interface DragState {
 Next to `const setAreaPolygon = useAreaStore((s) => s.setAreaPolygon)`:
 
 ```ts
-  const setAreaLabelOffset = useAreaStore((s) => s.setAreaLabelOffset)
+const setAreaLabelOffset = useAreaStore((s) => s.setAreaLabelOffset)
 ```
 
 - [ ] **Step 3: Add `findTagAt`**
@@ -502,25 +522,25 @@ Next to `const setAreaPolygon = useAreaStore((s) => s.setAreaPolygon)`:
 Immediately after the `findAreaAt` function:
 
 ```ts
-  const findTagAt = (viewportPoint: Pt): Area | null => {
-    const ctx = overlayRef.current?.getContext('2d')
-    if (!ctx || !viewport) return null
-    for (let i = pageAreas.length - 1; i >= 0; i -= 1) {
-      const area = pageAreas[i]
-      if (area.polygon.length < 2) continue
-      const rect = tagRect(area, ctx, viewport, state)
-      if (
-        rect &&
-        viewportPoint.x >= rect.x &&
-        viewportPoint.x <= rect.x + rect.w &&
-        viewportPoint.y >= rect.y &&
-        viewportPoint.y <= rect.y + rect.h
-      ) {
-        return area
-      }
+const findTagAt = (viewportPoint: Pt): Area | null => {
+  const ctx = overlayRef.current?.getContext('2d')
+  if (!ctx || !viewport) return null
+  for (let i = pageAreas.length - 1; i >= 0; i -= 1) {
+    const area = pageAreas[i]
+    if (area.polygon.length < 2) continue
+    const rect = tagRect(area, ctx, viewport, state)
+    if (
+      rect &&
+      viewportPoint.x >= rect.x &&
+      viewportPoint.x <= rect.x + rect.w &&
+      viewportPoint.y >= rect.y &&
+      viewportPoint.y <= rect.y + rect.h
+    ) {
+      return area
     }
-    return null
   }
+  return null
+}
 ```
 
 - [ ] **Step 4: Start a label drag in the Edit branch of `onPointerDown`**
@@ -528,19 +548,19 @@ Immediately after the `findAreaAt` function:
 At the very top of the `if (tool === 'edit') {` block (before `const vertex = findVertexHit(viewportPoint)`):
 
 ```ts
-      const tagArea = findTagAt(viewportPoint)
-      if (tagArea) {
-        setDrag({
-          kind: 'label',
-          startClient: { x: event.clientX, y: event.clientY },
-          startPan: pan,
-          areaId: tagArea.id,
-          startPt: pdfPt,
-          startLabelOffset: tagArea.labelOffset ?? { x: 0, y: 0 },
-          moved: false
-        })
-        return
-      }
+const tagArea = findTagAt(viewportPoint)
+if (tagArea) {
+  setDrag({
+    kind: 'label',
+    startClient: { x: event.clientX, y: event.clientY },
+    startPan: pan,
+    areaId: tagArea.id,
+    startPt: pdfPt,
+    startLabelOffset: tagArea.labelOffset ?? { x: 0, y: 0 },
+    moved: false
+  })
+  return
+}
 ```
 
 - [ ] **Step 5: Handle the label drag in `onPointerMove`**
@@ -548,15 +568,15 @@ At the very top of the `if (tool === 'edit') {` block (before `const vertex = fi
 Immediately after the existing `if (drag.kind === 'legend' && ...) { ... }` block:
 
 ```ts
-    if (drag.kind === 'label' && drag.areaId && drag.startPt && drag.startLabelOffset) {
-      if (moved) {
-        setAreaLabelOffset(drag.areaId, {
-          x: drag.startLabelOffset.x + (pdfPt.x - drag.startPt.x),
-          y: drag.startLabelOffset.y + (pdfPt.y - drag.startPt.y)
-        })
-      }
-      setDrag({ ...drag, moved })
-    }
+if (drag.kind === 'label' && drag.areaId && drag.startPt && drag.startLabelOffset) {
+  if (moved) {
+    setAreaLabelOffset(drag.areaId, {
+      x: drag.startLabelOffset.x + (pdfPt.x - drag.startPt.x),
+      y: drag.startLabelOffset.y + (pdfPt.y - drag.startPt.y)
+    })
+  }
+  setDrag({ ...drag, moved })
+}
 ```
 
 - [ ] **Step 6: Double-click a tag in Edit to reset its offset**
@@ -564,14 +584,14 @@ Immediately after the existing `if (drag.kind === 'legend' && ...) { ... }` bloc
 In `onDoubleClick`, immediately after the `const pdfPt = eventToPdfPt(...)` line and before the `doubleClickAction(...)` check:
 
 ```ts
-    if (tool === 'edit') {
-      const viewportPoint = eventToViewportPt(event.nativeEvent as PointerEvent, overlayRef.current)
-      const tagArea = findTagAt(viewportPoint)
-      if (tagArea) {
-        setAreaLabelOffset(tagArea.id, { x: 0, y: 0 })
-        return
-      }
-    }
+if (tool === 'edit') {
+  const viewportPoint = eventToViewportPt(event.nativeEvent as PointerEvent, overlayRef.current)
+  const tagArea = findTagAt(viewportPoint)
+  if (tagArea) {
+    setAreaLabelOffset(tagArea.id, { x: 0, y: 0 })
+    return
+  }
+}
 ```
 
 - [ ] **Step 7: Typecheck + full suite (no regressions)**
@@ -594,11 +614,13 @@ git commit -m "feat: drag area tags in edit tool, double-click to reset"
 ## Task 5: Toolbar Store-tags control + export follows mode
 
 **Files:**
+
 - Modify: `src/renderer/src/components/Toolbar.tsx` (selectors ~lines 39-44; new group after the Legend group ~line 140)
 - Modify: `src/renderer/src/report/buildReport.ts` (type import ~line 3; new import; `drawAreaOverlays` ~lines 29-56; `buildReportPdf` ~lines 80-90)
 - Modify: `src/renderer/src/App.tsx` (`generateReport` `buildReportPdf` call)
 
 **Interfaces:**
+
 - Consumes: `storeLabelMode` + `setStoreLabelMode` (Task 1); `storeTagLabel` (Task 2).
 - Produces: `buildReportPdf(..., storeLabels?: { mode: StoreLabelMode; prefixes: Record<string, string> })`.
 
@@ -607,8 +629,8 @@ git commit -m "feat: drag area tags in edit tool, double-click to reset"
 In `Toolbar.tsx`, next to the existing legend selectors:
 
 ```ts
-  const storeLabelMode = useAreaStore((s) => s.storeLabelMode)
-  const setStoreLabelMode = useAreaStore((s) => s.setStoreLabelMode)
+const storeLabelMode = useAreaStore((s) => s.storeLabelMode)
+const setStoreLabelMode = useAreaStore((s) => s.setStoreLabelMode)
 ```
 
 - [ ] **Step 2: Toolbar "Store tags" group**
@@ -616,29 +638,29 @@ In `Toolbar.tsx`, next to the existing legend selectors:
 Insert immediately after the closing `</div>` of the Legend group (before the `toolbar__group--end` group):
 
 ```tsx
-      <div className="toolbar__group" aria-label="Store tags">
-        <button
-          type="button"
-          className={storeLabelMode === 'code' ? 'is-active' : ''}
-          onClick={() => setStoreLabelMode('code')}
-        >
-          Code
-        </button>
-        <button
-          type="button"
-          className={storeLabelMode === 'number' ? 'is-active' : ''}
-          onClick={() => setStoreLabelMode('number')}
-        >
-          Number
-        </button>
-        <button
-          type="button"
-          className={storeLabelMode === 'off' ? 'is-active' : ''}
-          onClick={() => setStoreLabelMode('off')}
-        >
-          Off
-        </button>
-      </div>
+<div className="toolbar__group" aria-label="Store tags">
+  <button
+    type="button"
+    className={storeLabelMode === 'code' ? 'is-active' : ''}
+    onClick={() => setStoreLabelMode('code')}
+  >
+    Code
+  </button>
+  <button
+    type="button"
+    className={storeLabelMode === 'number' ? 'is-active' : ''}
+    onClick={() => setStoreLabelMode('number')}
+  >
+    Number
+  </button>
+  <button
+    type="button"
+    className={storeLabelMode === 'off' ? 'is-active' : ''}
+    onClick={() => setStoreLabelMode('off')}
+  >
+    Off
+  </button>
+</div>
 ```
 
 - [ ] **Step 3: Thread the mode through the export**
@@ -666,20 +688,20 @@ function drawAreaOverlays(
 (c) Replace the `if (area.kind === 'store' && area.code) { ... }` block with:
 
 ```ts
-    if (area.kind === 'store') {
-      const label = storeTagLabel(area.code, storeLabels.prefixes[area.name], storeLabels.mode)
-      if (label) {
-        const c = centroid(area.polygon)
-        const textW = codeFont.widthOfTextAtSize(label, codeSize)
-        page.drawText(label, {
-          x: c.x - textW / 2,
-          y: c.y - codeSize / 2,
-          size: codeSize,
-          font: codeFont,
-          color: rgb(0.07, 0.09, 0.15)
-        })
-      }
-    }
+if (area.kind === 'store') {
+  const label = storeTagLabel(area.code, storeLabels.prefixes[area.name], storeLabels.mode)
+  if (label) {
+    const c = centroid(area.polygon)
+    const textW = codeFont.widthOfTextAtSize(label, codeSize)
+    page.drawText(label, {
+      x: c.x - textW / 2,
+      y: c.y - codeSize / 2,
+      size: codeSize,
+      font: codeFont,
+      color: rgb(0.07, 0.09, 0.15)
+    })
+  }
+}
 ```
 
 (d) Change `buildReportPdf` to accept and forward the options. Update its signature to add a trailing parameter:
@@ -698,7 +720,7 @@ export async function buildReportPdf(
 and change the `drawAreaOverlays(doc, areas, colors, codeFont)` call to:
 
 ```ts
-  drawAreaOverlays(doc, areas, colors, codeFont, storeLabels)
+drawAreaOverlays(doc, areas, colors, codeFont, storeLabels)
 ```
 
 - [ ] **Step 4: Pass the options from `App.tsx` `generateReport`**
@@ -706,13 +728,20 @@ and change the `drawAreaOverlays(doc, areas, colors, codeFont)` call to:
 In the `buildReportPdf(...)` call, add a 6th argument after the legend options object:
 
 ```ts
-    const pdf = await buildReportPdf(state.originalBytes, png, state.areas, state.colors, {
-      visible: state.legendVisible,
-      pos: state.legendPos,
-      entriesForPage: (pageIndex) => facilitiesOnPage(state, pageIndex),
-      orientation: state.legendOrientation,
-      scale: state.legendScale
-    }, { mode: state.storeLabelMode, prefixes: state.prefixes })
+const pdf = await buildReportPdf(
+  state.originalBytes,
+  png,
+  state.areas,
+  state.colors,
+  {
+    visible: state.legendVisible,
+    pos: state.legendPos,
+    entriesForPage: (pageIndex) => facilitiesOnPage(state, pageIndex),
+    orientation: state.legendOrientation,
+    scale: state.legendScale
+  },
+  { mode: state.storeLabelMode, prefixes: state.prefixes }
+)
 ```
 
 - [ ] **Step 5: Typecheck + full suite**
@@ -744,6 +773,7 @@ git commit -m "feat: store-tag mode toolbar control + export follows mode"
 ## Self-Review
 
 **1. Spec coverage:**
+
 - Auto-size box → Task 3 (`tagBoxSize`, `tagRect`, draw rewrite). ✓
 - `Area.labelOffset` delta + `setAreaLabelOffset` + persistence → Task 1; applied in Task 3 (`tagRect`) + Task 4 (drag/reset). ✓
 - `storeTagLabel` (code/number/off, prefix strip, integer, fallback) → Task 2. ✓
@@ -756,6 +786,7 @@ git commit -m "feat: store-tag mode toolbar control + export follows mode"
 **2. Placeholder scan:** No TBD/TODO; every code step shows full code; commands have expected output. ✓
 
 **3. Type consistency:**
+
 - `storeTagLabel(code?: string, prefix?: string, mode: StoreLabelMode) → string | null` identical in Task 2 def, Task 3 (`tagLines`), Task 5 (`drawAreaOverlays`). ✓
 - `setAreaLabelOffset(id: string, offset: Pt)` and `setStoreLabelMode(mode: StoreLabelMode)` identical across Task 1 interface/impl and Task 4/Task 5 callers. ✓
 - `tagRect(...) → { x, y, w, h, lines } | null` consistent where defined (Task 3) and consumed (`findTagAt`, draw — Tasks 3/4). ✓

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { PageViewport } from 'pdfjs-dist'
 
-import { pointInPolygon, shoelacePt2 } from '../geometry/area'
+import { pointInArea, shoelacePt2 } from '../geometry/area'
 import {
   areaM2,
   areaStore,
@@ -21,11 +21,16 @@ import {
   type LegendGeometry,
   REPORT_FONT_FAMILY
 } from '../report/legendLayout'
+import { useT } from '../i18n'
 
 interface PdfStageProps {
   calibrationDraft: Pt[]
   onCalibrationPoint: (pt: Pt) => void
   onToast: (message: string) => void
+  loading: boolean
+  onOpenPdf: () => void
+  holeTarget: string | null
+  onHoleComplete: () => void
 }
 
 interface DragState {
@@ -36,6 +41,7 @@ interface DragState {
   vertexIndex?: number
   startPt?: Pt
   startPolygon?: Pt[]
+  startHoles?: Pt[][]
   startLegendPos?: Pt
   startLabelOffset?: Pt
   moved: boolean
@@ -50,7 +56,11 @@ interface AnchoredZoomInput {
   nextZoom: number
 }
 
-export function eventToPdfPt(e: PointerEvent, canvas: HTMLCanvasElement, viewport: PageViewport): Pt {
+export function eventToPdfPt(
+  e: PointerEvent,
+  canvas: HTMLCanvasElement,
+  viewport: PageViewport
+): Pt {
   const rect = canvas.getBoundingClientRect()
   const vx = (e.clientX - rect.left) * (canvas.width / rect.width)
   const vy = (e.clientY - rect.top) * (canvas.height / rect.height)
@@ -95,7 +105,10 @@ export function tagBoxSize(lineWidths: number[]): { width: number; height: numbe
 
 // Lines for an area's tag. Facility → name + area. Store → its display label
 // (code/number), or [] when the store label is off (no tag drawn).
-function tagLines(area: Area, state: Pick<AppState, 'pages' | 'prefixes' | 'storeLabelMode'>): string[] {
+function tagLines(
+  area: Area,
+  state: Pick<AppState, 'pages' | 'prefixes' | 'storeLabelMode'>
+): string[] {
   if (area.kind === 'store') {
     const label = storeTagLabel(area.code, state.prefixes[area.name], state.storeLabelMode)
     return label == null ? [] : [label]
@@ -130,7 +143,11 @@ function measureLegend(
   k: number
 ): LegendGeometry {
   ctx.font = `${LEGEND.font * k}px ${REPORT_FONT_FAMILY}`
-  return legendGeometry(names.map((name) => ctx.measureText(name).width), orientation, k)
+  return legendGeometry(
+    names.map((name) => ctx.measureText(name).width),
+    orientation,
+    k
+  )
 }
 
 // Page size in PDF points (bottom-left origin) from the viewport's viewBox.
@@ -173,7 +190,16 @@ export function constrainDelta(delta: Pt, lockAxis: boolean): Pt {
   return Math.abs(delta.x) >= Math.abs(delta.y) ? { x: delta.x, y: 0 } : { x: 0, y: delta.y }
 }
 
-export function PdfStage({ calibrationDraft, onCalibrationPoint, onToast }: PdfStageProps): React.JSX.Element {
+export function PdfStage({
+  calibrationDraft,
+  onCalibrationPoint,
+  onToast,
+  loading,
+  onOpenPdf,
+  holeTarget,
+  onHoleComplete
+}: PdfStageProps): React.JSX.Element {
+  const t = useT()
   const pageCanvasRef = useRef<HTMLCanvasElement>(null)
   const overlayRef = useRef<HTMLCanvasElement>(null)
   const wrapperRef = useRef<HTMLDivElement>(null)
@@ -201,14 +227,19 @@ export function PdfStage({ calibrationDraft, onCalibrationPoint, onToast }: PdfS
   const setPan = useAreaStore((s) => s.setPan)
   const setZoom = useAreaStore((s) => s.setZoom)
   const moveVertex = useAreaStore((s) => s.moveVertex)
-  const setAreaPolygon = useAreaStore((s) => s.setAreaPolygon)
   const setAreaLabelOffset = useAreaStore((s) => s.setAreaLabelOffset)
   const insertVertex = useAreaStore((s) => s.insertVertex)
   const removeVertex = useAreaStore((s) => s.removeVertex)
+  const setAreaGeometry = useAreaStore((s) => s.setAreaGeometry)
+  const addHole = useAreaStore((s) => s.addHole)
+  const beginInteraction = useAreaStore((s) => s.beginInteraction)
+  const endInteraction = useAreaStore((s) => s.endInteraction)
   const [viewport, setViewport] = useState<PageViewport | null>(null)
   const [draft, setDraft] = useState<Pt[]>([])
   const [hoverPt, setHoverPt] = useState<Pt | null>(null)
-  const [selectedVertex, setSelectedVertex] = useState<{ areaId: string; index: number } | null>(null)
+  const [selectedVertex, setSelectedVertex] = useState<{ areaId: string; index: number } | null>(
+    null
+  )
   const [drag, setDrag] = useState<DragState | null>(null)
   const page = pages[activePageIndex]
   const pageAreas = useMemo(
@@ -219,19 +250,49 @@ export function PdfStage({ calibrationDraft, onCalibrationPoint, onToast }: PdfS
 
   const closeDraft = useCallback(() => {
     if (draft.length < 3) return
+    if (holeTarget) {
+      addHole(holeTarget, draft)
+      onHoleComplete()
+      setDraft([])
+      setHoverPt(null)
+      return
+    }
     if (!activeName) {
       onToast(drawKind === 'store' ? 'Select a facility first' : 'Select or add a facility first')
       return
     }
     if (drawKind === 'store') {
       const code = nextStoreCode(areaStore.getState(), activeName)
-      addArea({ id: crypto.randomUUID(), pageIndex: activePageIndex, kind: 'store', name: activeName, code, polygon: draft })
+      addArea({
+        id: crypto.randomUUID(),
+        pageIndex: activePageIndex,
+        kind: 'store',
+        name: activeName,
+        code,
+        polygon: draft
+      })
     } else {
-      addArea({ id: crypto.randomUUID(), pageIndex: activePageIndex, kind: 'facility', name: activeName, polygon: draft })
+      addArea({
+        id: crypto.randomUUID(),
+        pageIndex: activePageIndex,
+        kind: 'facility',
+        name: activeName,
+        polygon: draft
+      })
     }
     setDraft([])
     setHoverPt(null)
-  }, [activeName, activePageIndex, addArea, draft, drawKind, onToast])
+  }, [
+    activeName,
+    activePageIndex,
+    addArea,
+    addHole,
+    draft,
+    drawKind,
+    holeTarget,
+    onHoleComplete,
+    onToast
+  ])
 
   useEffect(() => {
     let cancelled = false
@@ -295,10 +356,17 @@ export function PdfStage({ calibrationDraft, onCalibrationPoint, onToast }: PdfS
       ctx.moveTo(pts[0].x, pts[0].y)
       pts.slice(1).forEach((pt) => ctx.lineTo(pt.x, pt.y))
       ctx.closePath()
+      for (const ring of area.holes ?? []) {
+        if (ring.length < 2) continue
+        const hpts = ring.map((pt) => viewportPt(viewport, pt))
+        ctx.moveTo(hpts[0].x, hpts[0].y)
+        hpts.slice(1).forEach((pt) => ctx.lineTo(pt.x, pt.y))
+        ctx.closePath()
+      }
       ctx.save()
       ctx.globalAlpha = selected ? 0.35 : 0.2
       ctx.fillStyle = color
-      ctx.fill()
+      ctx.fill('evenodd')
       ctx.restore()
       ctx.strokeStyle = color
       ctx.lineWidth = selected ? 3 : 1.5
@@ -315,7 +383,11 @@ export function PdfStage({ calibrationDraft, onCalibrationPoint, onToast }: PdfS
         ctx.strokeRect(rect.x, rect.y, rect.w, rect.h)
         ctx.fillStyle = '#ffffff'
         rect.lines.forEach((line, index) =>
-          ctx.fillText(line, rect.x + rect.w / 2, rect.y + TAG.padY + TAG.lineH / 2 + index * TAG.lineH)
+          ctx.fillText(
+            line,
+            rect.x + rect.w / 2,
+            rect.y + TAG.padY + TAG.lineH / 2 + index * TAG.lineH
+          )
         )
       }
     }
@@ -328,7 +400,12 @@ export function PdfStage({ calibrationDraft, onCalibrationPoint, onToast }: PdfS
         const topLeftPdf = legendPos ?? defaultLegendPos(viewport)
         const tl = viewportPt(viewport, topLeftPdf)
         const k = legendScale * viewport.scale
-        const geo = measureLegend(ctx, entries.map((e) => e.name), legendOrientation, k)
+        const geo = measureLegend(
+          ctx,
+          entries.map((e) => e.name),
+          legendOrientation,
+          k
+        )
         ctx.save()
         ctx.fillStyle = 'rgba(255,255,255,0.9)'
         ctx.strokeStyle = '#9ca3af'
@@ -341,7 +418,12 @@ export function PdfStage({ calibrationDraft, onCalibrationPoint, onToast }: PdfS
         entries.forEach((entry, i) => {
           const slot = geo.slots[i]
           ctx.fillStyle = entry.color
-          ctx.fillRect(tl.x + slot.swatchX, tl.y + slot.swatchY, LEGEND.swatch * k, LEGEND.swatch * k)
+          ctx.fillRect(
+            tl.x + slot.swatchX,
+            tl.y + slot.swatchY,
+            LEGEND.swatch * k,
+            LEGEND.swatch * k
+          )
           ctx.fillStyle = '#111827'
           ctx.fillText(entry.name, tl.x + slot.textX, tl.y + slot.textY)
         })
@@ -354,7 +436,7 @@ export function PdfStage({ calibrationDraft, onCalibrationPoint, onToast }: PdfS
       ctx.beginPath()
       ctx.moveTo(pts[0].x, pts[0].y)
       pts.slice(1).forEach((pt) => ctx.lineTo(pt.x, pt.y))
-      ctx.strokeStyle = '#111827'
+      ctx.strokeStyle = holeTarget ? '#dc2626' : '#111827'
       ctx.lineWidth = 2
       ctx.setLineDash([6, 5])
       ctx.stroke()
@@ -368,7 +450,9 @@ export function PdfStage({ calibrationDraft, onCalibrationPoint, onToast }: PdfS
     }
 
     if (calibrating && calibrationDraft.length) {
-      const pts = [...calibrationDraft, ...(hoverPt ? [hoverPt] : [])].map((pt) => viewportPt(viewport, pt))
+      const pts = [...calibrationDraft, ...(hoverPt ? [hoverPt] : [])].map((pt) =>
+        viewportPt(viewport, pt)
+      )
       ctx.beginPath()
       ctx.moveTo(pts[0].x, pts[0].y)
       pts.slice(1).forEach((pt) => ctx.lineTo(pt.x, pt.y))
@@ -382,7 +466,8 @@ export function PdfStage({ calibrationDraft, onCalibrationPoint, onToast }: PdfS
       const pts = selectedArea.polygon.map((pt) => viewportPt(viewport, pt))
       ctx.lineWidth = 2
       pts.forEach((pt, index) => {
-        const isSelected = selectedVertex?.areaId === selectedArea.id && selectedVertex.index === index
+        const isSelected =
+          selectedVertex?.areaId === selectedArea.id && selectedVertex.index === index
         ctx.fillStyle = isSelected ? color : '#ffffff'
         ctx.strokeStyle = color
         ctx.fillRect(pt.x - 4, pt.y - 4, 8, 8)
@@ -406,6 +491,7 @@ export function PdfStage({ calibrationDraft, onCalibrationPoint, onToast }: PdfS
     calibrationDraft,
     draft,
     hoverPt,
+    holeTarget,
     legendPos,
     legendVisible,
     legendOrientation,
@@ -422,7 +508,8 @@ export function PdfStage({ calibrationDraft, onCalibrationPoint, onToast }: PdfS
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
       const target = event.target
-      const editingText = target instanceof HTMLElement && ['INPUT', 'SELECT', 'TEXTAREA'].includes(target.tagName)
+      const editingText =
+        target instanceof HTMLElement && ['INPUT', 'SELECT', 'TEXTAREA'].includes(target.tagName)
       if (editingText && event.key !== 'Escape') return
 
       if (draft.length) {
@@ -459,7 +546,7 @@ export function PdfStage({ calibrationDraft, onCalibrationPoint, onToast }: PdfS
 
   const findAreaAt = (pt: Pt): Area | null => {
     for (let i = pageAreas.length - 1; i >= 0; i -= 1) {
-      if (pointInPolygon(pt, pageAreas[i].polygon)) return pageAreas[i]
+      if (pointInArea(pageAreas[i], pt)) return pageAreas[i]
     }
     return null
   }
@@ -513,7 +600,12 @@ export function PdfStage({ calibrationDraft, onCalibrationPoint, onToast }: PdfS
     const ctx = overlayRef.current?.getContext('2d')
     if (!ctx) return null
     const tl = viewportPt(viewport, legendPos ?? defaultLegendPos(viewport))
-    const geo = measureLegend(ctx, entries.map((e) => e.name), legendOrientation, legendScale * viewport.scale)
+    const geo = measureLegend(
+      ctx,
+      entries.map((e) => e.name),
+      legendOrientation,
+      legendScale * viewport.scale
+    )
     return { x: tl.x, y: tl.y, w: geo.width, h: geo.height }
   }
 
@@ -538,6 +630,17 @@ export function PdfStage({ calibrationDraft, onCalibrationPoint, onToast }: PdfS
 
     const pdfPt = eventToPdfPt(event.nativeEvent, canvas, viewport)
     const viewportPoint = eventToViewportPt(event.nativeEvent, canvas)
+    if (holeTarget) {
+      if (draft.length >= 3) {
+        const first = viewportPt(viewport, draft[0])
+        if (distance(first, viewportPoint) <= 8) {
+          closeDraft()
+          return
+        }
+      }
+      setDraft((current) => [...current, pdfPt])
+      return
+    }
 
     const bounds = legendBounds()
     if (
@@ -547,6 +650,7 @@ export function PdfStage({ calibrationDraft, onCalibrationPoint, onToast }: PdfS
       viewportPoint.y >= bounds.y &&
       viewportPoint.y <= bounds.y + bounds.h
     ) {
+      beginInteraction()
       setDrag({
         kind: 'legend',
         startClient: { x: event.clientX, y: event.clientY },
@@ -566,6 +670,7 @@ export function PdfStage({ calibrationDraft, onCalibrationPoint, onToast }: PdfS
     if (tool === 'edit') {
       const tagArea = findTagAt(viewportPoint)
       if (tagArea) {
+        beginInteraction()
         setDrag({
           kind: 'label',
           startClient: { x: event.clientX, y: event.clientY },
@@ -580,6 +685,7 @@ export function PdfStage({ calibrationDraft, onCalibrationPoint, onToast }: PdfS
       const vertex = findVertexHit(viewportPoint)
       if (vertex) {
         setSelectedVertex(vertex)
+        beginInteraction()
         setDrag({
           kind: 'vertex',
           startClient: { x: event.clientX, y: event.clientY },
@@ -599,6 +705,7 @@ export function PdfStage({ calibrationDraft, onCalibrationPoint, onToast }: PdfS
       if (bodyArea) {
         if (bodyArea.id !== selectedAreaId) selectArea(bodyArea.id)
         setSelectedVertex(null)
+        beginInteraction()
         setDrag({
           kind: 'area',
           startClient: { x: event.clientX, y: event.clientY },
@@ -606,6 +713,7 @@ export function PdfStage({ calibrationDraft, onCalibrationPoint, onToast }: PdfS
           areaId: bodyArea.id,
           startPt: pdfPt,
           startPolygon: bodyArea.polygon.map((pt) => ({ ...pt })),
+          startHoles: bodyArea.holes?.map((ring) => ring.map((pt) => ({ ...pt }))),
           moved: false
         })
         return
@@ -637,7 +745,8 @@ export function PdfStage({ calibrationDraft, onCalibrationPoint, onToast }: PdfS
 
     if (!drag) return
 
-    const moved = drag.moved || distance(drag.startClient, { x: event.clientX, y: event.clientY }) > 2
+    const moved =
+      drag.moved || distance(drag.startClient, { x: event.clientX, y: event.clientY }) > 2
     if (drag.kind === 'pan') {
       const scroll = scrollRef.current
       const nextPan = {
@@ -662,9 +771,12 @@ export function PdfStage({ calibrationDraft, onCalibrationPoint, onToast }: PdfS
       if (moved) {
         const raw = { x: pdfPt.x - drag.startPt.x, y: pdfPt.y - drag.startPt.y }
         const delta = constrainDelta(raw, event.shiftKey)
-        setAreaPolygon(
+        setAreaGeometry(
           drag.areaId,
-          drag.startPolygon.map((pt) => ({ x: pt.x + delta.x, y: pt.y + delta.y }))
+          drag.startPolygon.map((pt) => ({ x: pt.x + delta.x, y: pt.y + delta.y })),
+          drag.startHoles?.map((ring) =>
+            ring.map((pt) => ({ x: pt.x + delta.x, y: pt.y + delta.y }))
+          )
         )
       }
       setDrag({ ...drag, moved })
@@ -680,7 +792,12 @@ export function PdfStage({ calibrationDraft, onCalibrationPoint, onToast }: PdfS
         const entries = facilitiesOnPage(state, activePageIndex)
         if (ctx && entries.length) {
           // Box size is in viewport px; convert to PDF points to clamp against the page.
-          const geo = measureLegend(ctx, entries.map((e) => e.name), legendOrientation, legendScale * viewport.scale)
+          const geo = measureLegend(
+            ctx,
+            entries.map((e) => e.name),
+            legendOrientation,
+            legendScale * viewport.scale
+          )
           const boxW = geo.width / viewport.scale
           const boxH = geo.height / viewport.scale
           const page = pageSizePdf(viewport)
@@ -706,6 +823,7 @@ export function PdfStage({ calibrationDraft, onCalibrationPoint, onToast }: PdfS
   const onPointerUp = (event: React.PointerEvent<HTMLCanvasElement>): void => {
     overlayRef.current?.releasePointerCapture(event.pointerId)
     setDrag(null)
+    endInteraction()
   }
 
   const onDoubleClick = (event: React.MouseEvent<HTMLCanvasElement>): void => {
@@ -755,41 +873,115 @@ export function PdfStage({ calibrationDraft, onCalibrationPoint, onToast }: PdfS
   const livePt2 = livePoly.length >= 3 ? shoelacePt2(livePoly) : 0
   const liveText = livePt2 ? formatLiveArea(livePt2, mmPerPtFor(state, activePageIndex)) : null
 
+  const guide = holeTarget
+    ? t('stage.guide.hole')
+    : calibrating
+      ? t('stage.guide.calibrate')
+      : tool === 'draw'
+        ? t('stage.guide.draw')
+        : tool === 'edit'
+          ? t('stage.guide.edit')
+          : t('stage.guide.pan')
+  const unscaled = pdfDoc != null && mmPerPtFor(state, activePageIndex) == null
+
   return (
     <main className="stage-shell">
-      {!pdfDoc ? (
+      {!pdfDoc && !loading ? (
         <div className="empty-state">
-          <h1>Open a vector PDF floor plan</h1>
-          <p>Trace business footprints, set a page scale, then append an area summary page to the PDF.</p>
+          <h1>{t('stage.empty.title')}</h1>
+          <p>{t('stage.empty.desc')}</p>
+          <button type="button" className="btn btn--primary" onClick={onOpenPdf}>
+            {t('stage.empty.open')}
+          </button>
+          <div className="empty-steps">
+            <span>{t('kind.facility')}</span>
+            <span>→</span>
+            <span>{t('inspector.tab.page')}</span>
+            <span>→</span>
+            <span>{t('tool.draw')}</span>
+            <span>→</span>
+            <span>{t('action.generateReport')}</span>
+          </div>
         </div>
       ) : null}
+
+      {pdfDoc && !loading ? <div className="stage-guide">{guide}</div> : null}
+
       <div ref={scrollRef} className="stage-scroll">
-        <div
-          ref={wrapperRef}
-          className="pdf-stage"
-          style={{
-            width: (viewport?.width ?? 0) * zoom,
-            height: (viewport?.height ?? 0) * zoom
-          }}
-        >
-          <canvas ref={pageCanvasRef} className="pdf-canvas" />
-          <canvas
-            ref={overlayRef}
-            className="overlay-canvas"
-            onPointerDown={onPointerDown}
-            onPointerMove={onPointerMove}
-            onPointerUp={onPointerUp}
-            onPointerLeave={() => setHoverPt(null)}
-            onDoubleClick={onDoubleClick}
-            onWheel={onWheel}
-            onAuxClick={(event) => event.preventDefault()}
-          />
-        </div>
+        {loading ? (
+          <div className="skeleton" aria-hidden="true" />
+        ) : (
+          <div
+            ref={wrapperRef}
+            className="pdf-stage"
+            style={{
+              width: (viewport?.width ?? 0) * zoom,
+              height: (viewport?.height ?? 0) * zoom
+            }}
+          >
+            <canvas ref={pageCanvasRef} className="pdf-canvas" />
+            <canvas
+              ref={overlayRef}
+              className="overlay-canvas"
+              onPointerDown={onPointerDown}
+              onPointerMove={onPointerMove}
+              onPointerUp={onPointerUp}
+              onPointerCancel={onPointerUp}
+              onPointerLeave={() => setHoverPt(null)}
+              onDoubleClick={onDoubleClick}
+              onWheel={onWheel}
+              onAuxClick={(event) => event.preventDefault()}
+            />
+          </div>
+        )}
       </div>
+
+      {pdfDoc && !loading ? (
+        <div className="zoom-cluster">
+          <button
+            type="button"
+            className="btn btn--icon"
+            aria-label={t('stage.zoomOut')}
+            onClick={() => setZoom(zoom / 1.2)}
+          >
+            −
+          </button>
+          <span className="value">{Math.round(zoom * 100)}%</span>
+          <button
+            type="button"
+            className="btn btn--icon"
+            aria-label={t('stage.zoomIn')}
+            onClick={() => setZoom(zoom * 1.2)}
+          >
+            +
+          </button>
+          <button
+            type="button"
+            className="btn"
+            onClick={() => {
+              setZoom(1)
+              setPan({ x: 0, y: 0 })
+            }}
+          >
+            {t('stage.zoomFit')}
+          </button>
+        </div>
+      ) : null}
+
       <div className="stage-status">
-        <span>{page?.label ?? 'No page'}</span>
-        <span>{calibrating ? 'Calibration: click two points on the plan' : `Tool: ${tool}`}</span>
-        {liveText ? <strong>{liveText}</strong> : null}
+        {loading ? (
+          <span>{t('stage.loading')}</span>
+        ) : (
+          <>
+            <span>{page?.label ?? t('page.none')}</span>
+            <strong>{t(`tool.${tool}`)}</strong>
+            {tool === 'draw' ? <span>{t(`kind.${drawKind}`)}</span> : null}
+            {activeName ? <span>{activeName}</span> : null}
+            {draft.length ? <span>{t('selection.vertices', { n: draft.length })}</span> : null}
+            {unscaled ? <span className="unscaled">{t('stage.status.unscaled')}</span> : null}
+            {liveText ? <strong>{liveText}</strong> : null}
+          </>
+        )}
       </div>
     </main>
   )

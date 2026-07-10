@@ -33,3 +33,24 @@ export function pointInPolygon(p: Pt, poly: Pt[]): boolean {
 
   return inside
 }
+
+export function polygonCentroid(poly: Pt[]): Pt {
+  if (poly.length === 0) return { x: 0, y: 0 }
+  let x = 0
+  let y = 0
+  for (const p of poly) {
+    x += p.x
+    y += p.y
+  }
+  return { x: x / poly.length, y: y / poly.length }
+}
+
+export function areaNetPt2(area: { polygon: Pt[]; holes?: Pt[][] }): number {
+  const holes = (area.holes ?? []).reduce((sum, ring) => sum + shoelacePt2(ring), 0)
+  return Math.max(0, shoelacePt2(area.polygon) - holes)
+}
+
+export function pointInArea(area: { polygon: Pt[]; holes?: Pt[][] }, p: Pt): boolean {
+  if (!pointInPolygon(p, area.polygon)) return false
+  return !(area.holes ?? []).some((ring) => pointInPolygon(p, ring))
+}

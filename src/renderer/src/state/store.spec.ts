@@ -8,7 +8,10 @@ import {
   nextStoreCode,
   reportByFacility,
   reportByFacilityLevel,
-  reportByLevel
+  reportByLevel,
+  renumberStoreCodes,
+  selectIsDirty,
+  toProjectFile
 } from './store'
 import type { Area, PageState } from './types'
 
@@ -27,6 +30,20 @@ const square = (pageIndex: number, name: string): Area => ({
     { x: 10, y: 0 },
     { x: 10, y: 10 },
     { x: 0, y: 10 }
+  ]
+})
+
+const storeAt = (pageIndex: number, name: string, cx: number, cy: number, code?: string): Area => ({
+  id: crypto.randomUUID(),
+  pageIndex,
+  kind: 'store',
+  name,
+  code,
+  polygon: [
+    { x: cx - 2, y: cy - 2 },
+    { x: cx + 2, y: cy - 2 },
+    { x: cx + 2, y: cy + 2 },
+    { x: cx - 2, y: cy + 2 }
   ]
 })
 
@@ -137,7 +154,9 @@ describe('area store', () => {
     const store = createAreaStore({ pages, names: ['A'], areas: [a], selectedAreaId: a.id })
 
     expect(store.getState().copySelectedArea()).toBe(1)
-    expect(store.getState().clipboard).toEqual([{ kind: 'facility', name: 'A', polygon: a.polygon }])
+    expect(store.getState().clipboard).toEqual([
+      { kind: 'facility', name: 'A', polygon: a.polygon }
+    ])
 
     store.getState().selectArea(null)
     expect(store.getState().copySelectedArea()).toBe(0)
@@ -174,7 +193,11 @@ describe('area store', () => {
     expect(store.getState().selectedAreaId).toBe(pasted!.id)
 
     // pasted polygon is an independent clone
-    store.getState().setAreaPolygon(pasted!.id, [{ x: 99, y: 99 }, { x: 1, y: 0 }, { x: 0, y: 1 }])
+    store.getState().setAreaPolygon(pasted!.id, [
+      { x: 99, y: 99 },
+      { x: 1, y: 0 },
+      { x: 0, y: 1 }
+    ])
     expect(store.getState().clipboard[0].polygon).toEqual(a.polygon)
     expect(store.getState().areas.find((area) => area.id === a.id)!.polygon).toEqual(a.polygon)
   })
@@ -185,15 +208,39 @@ describe('area store', () => {
       names: ['A'],
       prefixes: { A: 'ts' },
       areas: [
-        { id: 'f', pageIndex: 0, kind: 'facility', name: 'A', polygon: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }] },
-        { id: 's', pageIndex: 0, kind: 'store', name: 'A', code: 'ts001', polygon: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }] }
+        {
+          id: 'f',
+          pageIndex: 0,
+          kind: 'facility',
+          name: 'A',
+          polygon: [
+            { x: 0, y: 0 },
+            { x: 1, y: 0 },
+            { x: 1, y: 1 }
+          ]
+        },
+        {
+          id: 's',
+          pageIndex: 0,
+          kind: 'store',
+          name: 'A',
+          code: 'ts001',
+          polygon: [
+            { x: 0, y: 0 },
+            { x: 1, y: 0 },
+            { x: 1, y: 1 }
+          ]
+        }
       ]
     })
     // copy the store, paste it — it must get a fresh code, not ts001 again
     store.getState().selectArea('s')
     store.getState().copySelectedArea()
     store.getState().pasteClipboard()
-    const codes = store.getState().areas.filter((a) => a.kind === 'store').map((a) => a.code)
+    const codes = store
+      .getState()
+      .areas.filter((a) => a.kind === 'store')
+      .map((a) => a.code)
     expect(codes).toEqual(['ts001', 'ts002'])
   })
 
@@ -204,15 +251,40 @@ describe('area store', () => {
       prefixes: { A: 'ts' },
       activePageIndex: 0,
       areas: [
-        { id: 's1', pageIndex: 0, kind: 'store', name: 'A', code: 'ts001', polygon: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }] },
-        { id: 's2', pageIndex: 0, kind: 'store', name: 'A', code: 'ts002', polygon: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }] }
+        {
+          id: 's1',
+          pageIndex: 0,
+          kind: 'store',
+          name: 'A',
+          code: 'ts001',
+          polygon: [
+            { x: 0, y: 0 },
+            { x: 1, y: 0 },
+            { x: 1, y: 1 }
+          ]
+        },
+        {
+          id: 's2',
+          pageIndex: 0,
+          kind: 'store',
+          name: 'A',
+          code: 'ts002',
+          polygon: [
+            { x: 0, y: 0 },
+            { x: 1, y: 0 },
+            { x: 1, y: 1 }
+          ]
+        }
       ]
     })
     // copy the whole page (both stores), then paste — the two new stores must
     // advance sequentially past the existing ones AND past each other.
     store.getState().copyActivePage()
     store.getState().pasteClipboard()
-    const codes = store.getState().areas.filter((a) => a.kind === 'store').map((a) => a.code)
+    const codes = store
+      .getState()
+      .areas.filter((a) => a.kind === 'store')
+      .map((a) => a.code)
     expect(codes).toEqual(['ts001', 'ts002', 'ts003', 'ts004'])
   })
 
@@ -230,7 +302,11 @@ describe('area store', () => {
   it('setAreaPolygon replaces the target polygon and ignores unknown ids', () => {
     const a = square(0, 'A')
     const store = createAreaStore({ pages, names: ['A'], areas: [a] })
-    const next = [{ x: 1, y: 1 }, { x: 2, y: 1 }, { x: 2, y: 2 }]
+    const next = [
+      { x: 1, y: 1 },
+      { x: 2, y: 1 },
+      { x: 2, y: 2 }
+    ]
 
     store.getState().setAreaPolygon(a.id, next)
     expect(store.getState().areas[0].polygon).toEqual(next)
@@ -271,7 +347,14 @@ describe('area store', () => {
   })
 
   it('sets facility prefix, store code, and draw kind', () => {
-    const area: Area = { id: 's1', pageIndex: 0, kind: 'store', name: 'A', code: 'ts001', polygon: [] }
+    const area: Area = {
+      id: 's1',
+      pageIndex: 0,
+      kind: 'store',
+      name: 'A',
+      code: 'ts001',
+      polygon: []
+    }
     const store = createAreaStore({ pages, names: ['A'], areas: [area] })
 
     store.getState().setFacilityPrefix('A', ' ts ')
@@ -301,7 +384,18 @@ describe('area store', () => {
       fileName: 'p.pdf',
       pages,
       names: ['A'],
-      areas: [{ id: 'a1', pageIndex: 0, name: 'A', polygon: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }] }]
+      areas: [
+        {
+          id: 'a1',
+          pageIndex: 0,
+          name: 'A',
+          polygon: [
+            { x: 0, y: 0 },
+            { x: 1, y: 0 },
+            { x: 1, y: 1 }
+          ]
+        }
+      ]
     })
     expect(store.getState().areas[0].kind).toBe('facility')
     expect(store.getState().prefixes).toEqual({})
@@ -408,7 +502,9 @@ describe('area store', () => {
     expect(oneF.stores).toBe(1)
 
     // B still gets a facility×level row from its store, with zero area
-    const bRow = reportByFacilityLevel(store.getState()).find((r) => r.name === 'B' && r.level === '1F')!
+    const bRow = reportByFacilityLevel(store.getState()).find(
+      (r) => r.name === 'B' && r.level === '1F'
+    )!
     expect(bRow.stores).toBe(1)
     expect(bRow.areaM2).toBe(0)
   })
@@ -464,7 +560,10 @@ describe('area store', () => {
 
     store.getState().setAreaLabelOffset(a.id, { x: 5, y: -3 })
 
-    expect(store.getState().areas.find((area) => area.id === a.id)?.labelOffset).toEqual({ x: 5, y: -3 })
+    expect(store.getState().areas.find((area) => area.id === a.id)?.labelOffset).toEqual({
+      x: 5,
+      y: -3
+    })
     expect(store.getState().areas.find((area) => area.id === b.id)?.labelOffset).toBeUndefined()
   })
 
@@ -513,5 +612,245 @@ describe('area store', () => {
 
     store.getState().importProject({ pages, names: ['A'], areas: [] })
     expect(store.getState().storeLabelMode).toBe('code')
+  })
+
+  it('toProjectFile round-trips a known persisted project slice', () => {
+    const area = square(0, 'A')
+    const store = createAreaStore({
+      fileName: 'plan.pdf',
+      pdfPath: 'C:/docs/plan.pdf',
+      pages,
+      areas: [area],
+      names: ['A'],
+      colors: { A: '#aabbcc' },
+      prefixes: { A: 'ts' },
+      legendPos: { x: 1, y: 2 },
+      legendVisible: false,
+      legendScale: 1.5,
+      legendOrientation: 'horizontal',
+      storeLabelMode: 'number'
+    })
+
+    expect(toProjectFile(store.getState())).toEqual({
+      version: 2,
+      fileName: 'plan.pdf',
+      pdfPath: 'C:/docs/plan.pdf',
+      pages,
+      areas: [area],
+      names: ['A'],
+      colors: { A: '#aabbcc' },
+      prefixes: { A: 'ts' },
+      legendPos: { x: 1, y: 2 },
+      legendVisible: false,
+      legendScale: 1.5,
+      legendOrientation: 'horizontal',
+      storeLabelMode: 'number'
+    })
+  })
+
+  it('selectIsDirty is false after import/mark, true after addArea, false for view-only actions', () => {
+    const store = createAreaStore({ fileName: 'source.pdf', pages: [], names: [], areas: [] })
+    expect(selectIsDirty(store.getState())).toBe(false)
+
+    store.getState().importProject({ fileName: 'project.pdf', pages, names: ['A'], areas: [] })
+    expect(selectIsDirty(store.getState())).toBe(false)
+
+    const area = square(0, 'A')
+    store.getState().addArea(area)
+    expect(selectIsDirty(store.getState())).toBe(true)
+
+    store.getState().setTool('edit')
+    store.getState().setZoom(2)
+    store.getState().selectArea(area.id)
+    expect(selectIsDirty(store.getState())).toBe(true)
+    expect(store.getState().tool).toBe('edit')
+    expect(store.getState().zoom).toBe(2)
+    expect(store.getState().selectedAreaId).toBe(area.id)
+
+    store.getState().markProjectSaved()
+    expect(selectIsDirty(store.getState())).toBe(false)
+
+    store.getState().setTool('pan')
+    store.getState().setZoom(1.5)
+    store.getState().selectArea(null)
+    expect(selectIsDirty(store.getState())).toBe(false)
+  })
+
+  it('deleteArea removes the target, clears selection, and no-ops for unknown ids', () => {
+    const a = square(0, 'A')
+    const b = square(0, 'B')
+    const c = square(0, 'C')
+    const store = createAreaStore({
+      pages,
+      names: ['A', 'B', 'C'],
+      areas: [a, b, c],
+      selectedAreaId: b.id
+    })
+
+    store.getState().deleteArea(b.id)
+    expect(store.getState().areas).toEqual([a, c])
+    expect(store.getState().selectedAreaId).toBeNull()
+
+    store.getState().deleteArea('missing')
+    expect(store.getState().areas).toEqual([a, c])
+  })
+
+  it('renumberStoreCodes orders stores per facility by page, then top-to-bottom, left-to-right', () => {
+    const topLeft = storeAt(0, 'A', 10, 100, 'ts005')
+    const topRight = storeAt(0, 'A', 100, 100, 'ts006')
+    const bottom = storeAt(0, 'A', 50, 10, 'ts007')
+    const assignments = renumberStoreCodes({
+      areas: [bottom, topRight, topLeft],
+      prefixes: { A: 'ts' }
+    })
+    const codeFor = (id: string): string | undefined => assignments.find((a) => a.id === id)?.code
+    expect(codeFor(topLeft.id)).toBe('ts001')
+    expect(codeFor(topRight.id)).toBe('ts002')
+    expect(codeFor(bottom.id)).toBe('ts003')
+  })
+
+  it('renumberStoreCodes continues across pages and handles empty prefixes and multiple facilities', () => {
+    const a0 = storeAt(0, 'A', 10, 50, 'x')
+    const a1 = storeAt(1, 'A', 10, 50, 'y')
+    const b0 = storeAt(0, 'B', 10, 50)
+    const assignments = renumberStoreCodes({ areas: [a1, b0, a0], prefixes: { A: 'ts' } })
+    const codeFor = (id: string): string | undefined => assignments.find((a) => a.id === id)?.code
+    expect(codeFor(a0.id)).toBe('ts001')
+    expect(codeFor(a1.id)).toBe('ts002')
+    expect(codeFor(b0.id)).toBe('001')
+  })
+
+  it('renumberStoreCodes infers an unregistered prefix from existing codes and normalizes stragglers', () => {
+    const top = storeAt(0, 'M', 10, 100, 'S本館003')
+    const right = storeAt(0, 'M', 100, 100, 'S本館007')
+    const straggler = storeAt(0, 'M', 50, 10, '012')
+    const assignments = renumberStoreCodes({ areas: [top, right, straggler], prefixes: {} })
+    const codeFor = (id: string): string | undefined => assignments.find((a) => a.id === id)?.code
+    expect(codeFor(top.id)).toBe('S本館001')
+    expect(codeFor(right.id)).toBe('S本館002')
+    expect(codeFor(straggler.id)).toBe('S本館003')
+  })
+
+  it('renumberStores applies codes, ignores facilities, counts changes, and is idempotent', () => {
+    const topLeft = storeAt(0, 'A', 10, 100, 'ts005')
+    const topRight = storeAt(0, 'A', 100, 100, 'ts006')
+    const bottom = storeAt(0, 'A', 50, 10, 'ts007')
+    const facility = square(0, 'A')
+    const store = createAreaStore({
+      pages,
+      names: ['A'],
+      prefixes: { A: 'ts' },
+      areas: [bottom, topRight, topLeft, facility]
+    })
+    expect(store.getState().renumberStores()).toBe(3)
+    const codeFor = (id: string): string | undefined =>
+      store.getState().areas.find((a) => a.id === id)?.code
+    expect(codeFor(topLeft.id)).toBe('ts001')
+    expect(codeFor(topRight.id)).toBe('ts002')
+    expect(codeFor(bottom.id)).toBe('ts003')
+    expect(codeFor(facility.id)).toBeUndefined()
+    expect(store.getState().renumberStores()).toBe(0)
+  })
+})
+
+describe('holes and net area', () => {
+  const holeRing = [
+    { x: 2, y: 2 },
+    { x: 4, y: 2 },
+    { x: 4, y: 4 },
+    { x: 2, y: 4 }
+  ]
+
+  it('adds and removes whole holes on an area', () => {
+    const store = createAreaStore({ areas: [square(0, 'A')] })
+    const id = store.getState().areas[0].id
+    store.getState().addHole(id, holeRing)
+    expect(store.getState().areas[0].holes).toHaveLength(1)
+    expect(store.getState().areas[0].holes![0]).not.toBe(holeRing)
+    store.getState().removeHole(id, 0)
+    expect(store.getState().areas[0].holes).toBeUndefined()
+  })
+
+  it('rejects a hole with fewer than three vertices', () => {
+    const store = createAreaStore({ areas: [square(0, 'A')] })
+    const id = store.getState().areas[0].id
+    store.getState().addHole(id, [
+      { x: 1, y: 1 },
+      { x: 2, y: 2 }
+    ])
+    expect(store.getState().areas[0].holes).toBeUndefined()
+  })
+
+  it('subtracts hole area from the reported facility total', () => {
+    const solid = aggregate({ areas: [square(0, 'A')], pages })[0]
+    const holed = aggregate({ areas: [{ ...square(0, 'A'), holes: [holeRing] }], pages })[0]
+    expect(solid.scaledM2).toBeCloseTo(0.01)
+    expect(holed.scaledM2).toBeCloseTo(0.0096)
+  })
+
+  it('clones holes on import so edits do not alias the source', () => {
+    const source = toProjectFile(
+      createAreaStore({ areas: [{ ...square(0, 'A'), holes: [holeRing] }] }).getState()
+    )
+    const store = createAreaStore()
+    store.getState().importProject(source)
+    const imported = store.getState().areas[0]
+    expect(imported.holes).toEqual([holeRing])
+    expect(imported.holes![0]).not.toBe(source.areas[0].holes![0])
+  })
+})
+
+describe('setAreaKind', () => {
+  it('assigns a store code when converting facility to store', () => {
+    const store = createAreaStore({ areas: [square(0, 'A')] })
+    const id = store.getState().areas[0].id
+    store.getState().setAreaKind(id, 'store')
+    expect(store.getState().areas[0].kind).toBe('store')
+    expect(store.getState().areas[0].code).toBe('001')
+  })
+
+  it('clears the code when converting store to facility', () => {
+    const store = createAreaStore({ areas: [storeAt(0, 'A', 50, 50, 'ts001')] })
+    const id = store.getState().areas[0].id
+    store.getState().setAreaKind(id, 'facility')
+    expect(store.getState().areas[0].kind).toBe('facility')
+    expect(store.getState().areas[0].code).toBeUndefined()
+  })
+})
+
+describe('undo and redo', () => {
+  it('undoes and redoes a discrete edit', () => {
+    const store = createAreaStore({ areas: [square(0, 'A')] })
+    const id = store.getState().areas[0].id
+    store.getState().renameArea(id, 'B')
+    expect(store.getState().areas[0].name).toBe('B')
+    store.getState().undo()
+    expect(store.getState().areas[0].name).toBe('A')
+    store.getState().redo()
+    expect(store.getState().areas[0].name).toBe('B')
+  })
+
+  it('coalesces one interaction into a single undo step', () => {
+    const store = createAreaStore({ areas: [square(0, 'A')] })
+    const id = store.getState().areas[0].id
+    store.getState().beginInteraction()
+    store.getState().moveVertex(id, 0, { x: 5, y: 5 })
+    store.getState().moveVertex(id, 0, { x: 6, y: 6 })
+    store.getState().endInteraction()
+    expect(store.getState().areas[0].polygon[0]).toEqual({ x: 6, y: 6 })
+    expect(store.getState().undoStack).toHaveLength(1)
+    store.getState().undo()
+    expect(store.getState().areas[0].polygon[0]).toEqual({ x: 0, y: 0 })
+    expect(store.getState().undoStack).toHaveLength(0)
+  })
+
+  it('clears history when a project is imported', () => {
+    const store = createAreaStore({ areas: [square(0, 'A')] })
+    const id = store.getState().areas[0].id
+    store.getState().renameArea(id, 'B')
+    expect(store.getState().undoStack.length).toBeGreaterThan(0)
+    store.getState().importProject(toProjectFile(store.getState()))
+    expect(store.getState().undoStack).toHaveLength(0)
+    expect(store.getState().redoStack).toHaveLength(0)
   })
 })

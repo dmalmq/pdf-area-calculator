@@ -1,10 +1,18 @@
 import { describe, expect, it } from 'vitest'
 
-import { clampLegendTopLeft, defaultLegendTopLeft, DEFAULT_LEGEND_INSET_PT, legendGeometry } from './legendLayout'
+import {
+  clampLegendTopLeft,
+  defaultLegendTopLeft,
+  DEFAULT_LEGEND_INSET_PT,
+  legendGeometry
+} from './legendLayout'
 
 describe('legend layout', () => {
   it('places the default legend inset from the page top-left', () => {
-    expect(defaultLegendTopLeft(800)).toEqual({ x: DEFAULT_LEGEND_INSET_PT, y: 800 - DEFAULT_LEGEND_INSET_PT })
+    expect(defaultLegendTopLeft(800)).toEqual({
+      x: DEFAULT_LEGEND_INSET_PT,
+      y: 800 - DEFAULT_LEGEND_INSET_PT
+    })
   })
 
   it('keeps a legend inside the page bounds', () => {

@@ -1,5 +1,9 @@
-import { useAreaStore } from '../state/store'
-import type { Tool } from '../state/types'
+import { useRef } from 'react'
+import { useStore } from 'zustand'
+
+import { localeStore, useT } from '../i18n'
+import { selectIsDirty, useAreaStore } from '../state/store'
+import type { BusyAction, Tool } from '../state/types'
 
 interface ToolbarProps {
   onOpenPdf: () => void
@@ -7,169 +11,228 @@ interface ToolbarProps {
   onOpenProject: () => void
   onGenerateReport: () => void
   onShowShortcuts: () => void
+  onToggleInspector: () => void
+  onUndo: () => void
+  onRedo: () => void
+  canUndo: boolean
+  canRedo: boolean
+  busy: BusyAction | null
 }
 
 const tools: Tool[] = ['draw', 'edit', 'pan']
-
-function toolLabel(tool: Tool): string {
-  if (tool === 'draw') return 'Draw'
-  if (tool === 'edit') return 'Edit'
-  return 'Pan'
-}
 
 export function Toolbar({
   onOpenPdf,
   onSaveProject,
   onOpenProject,
   onGenerateReport,
-  onShowShortcuts
+  onShowShortcuts,
+  onToggleInspector,
+  onUndo,
+  onRedo,
+  canUndo,
+  canRedo,
+  busy
 }: ToolbarProps): React.JSX.Element {
+  const t = useT()
+  const locale = useStore(localeStore, (s) => s.locale)
+  const setLocale = useStore(localeStore, (s) => s.setLocale)
+  const menuRef = useRef<HTMLDetailsElement>(null)
+
+  const fileName = useAreaStore((s) => s.fileName)
+  const dirty = useAreaStore(selectIsDirty)
   const pageIndex = useAreaStore((s) => s.activePageIndex)
   const pageCount = useAreaStore((s) => s.pages.length)
-  const tool = useAreaStore((s) => s.tool)
-  const zoom = useAreaStore((s) => s.zoom)
-  const areaCount = useAreaStore((s) => s.areas.length)
-  const drawKind = useAreaStore((s) => s.drawKind)
   const pageLabel = useAreaStore((s) => s.pages[s.activePageIndex]?.label ?? '')
+  const tool = useAreaStore((s) => s.tool)
+  const drawKind = useAreaStore((s) => s.drawKind)
+  const areaCount = useAreaStore((s) => s.areas.length)
   const setActivePage = useAreaStore((s) => s.setActivePage)
   const setTool = useAreaStore((s) => s.setTool)
-  const setZoom = useAreaStore((s) => s.setZoom)
-  const setPan = useAreaStore((s) => s.setPan)
   const setDrawKind = useAreaStore((s) => s.setDrawKind)
-  const legendVisible = useAreaStore((s) => s.legendVisible)
-  const setLegendVisible = useAreaStore((s) => s.setLegendVisible)
-  const legendScale = useAreaStore((s) => s.legendScale)
-  const legendOrientation = useAreaStore((s) => s.legendOrientation)
-  const setLegendScale = useAreaStore((s) => s.setLegendScale)
-  const setLegendOrientation = useAreaStore((s) => s.setLegendOrientation)
-  const storeLabelMode = useAreaStore((s) => s.storeLabelMode)
-  const setStoreLabelMode = useAreaStore((s) => s.setStoreLabelMode)
+
+  const runFromMenu = (action: () => void): void => {
+    if (menuRef.current) menuRef.current.open = false
+    action()
+  }
+
+  const generating = busy === 'generate-report'
 
   return (
-    <header className="toolbar">
-      <div className="toolbar__group">
-        <button type="button" onClick={onOpenPdf}>Open</button>
-        <button type="button" onClick={onSaveProject}>Save Project</button>
-        <button type="button" onClick={onOpenProject}>Open Project</button>
+    <header className="topbar">
+      <div className="topbar__group">
+        <span className="topbar__brand" aria-hidden="true">
+          面
+        </span>
+        <div className="topbar__doc">
+          <strong>{fileName ?? t('app.title')}</strong>
+          {fileName ? (
+            <small className={dirty ? 'is-dirty' : undefined}>
+              {dirty ? t('status.unsaved') : t('status.saved')}
+            </small>
+          ) : null}
+        </div>
       </div>
 
-      <div className="toolbar__group">
-        <button type="button" disabled={pageIndex <= 0} onClick={() => setActivePage(pageIndex - 1)}>
-          Prev
+      <div className="topbar__group">
+        <details className="menu" ref={menuRef}>
+          <summary>{t('file.menu')}</summary>
+          <div className="menu__list">
+            <button
+              type="button"
+              className="btn"
+              disabled={busy === 'open-pdf'}
+              onClick={() => runFromMenu(onOpenPdf)}
+            >
+              {t('file.openPdf')}
+            </button>
+            <button
+              type="button"
+              className="btn"
+              disabled={busy === 'open-project'}
+              onClick={() => runFromMenu(onOpenProject)}
+            >
+              {t('file.openProject')}
+            </button>
+            <button
+              type="button"
+              className="btn"
+              disabled={busy === 'save-project' || !fileName}
+              onClick={() => runFromMenu(onSaveProject)}
+            >
+              {t('file.saveProject')}
+            </button>
+          </div>
+        </details>
+      </div>
+
+      <div className="topbar__group topbar__page">
+        <button
+          type="button"
+          className="btn btn--icon"
+          aria-label={t('page.prev')}
+          disabled={pageIndex <= 0}
+          onClick={() => setActivePage(pageIndex - 1)}
+        >
+          ‹
         </button>
-        <span className="toolbar__label">
-          {pageCount ? `${pageLabel} · ` : ''}Page {pageCount ? pageIndex + 1 : 0}/{pageCount}
+        <span className="muted">
+          {pageCount ? `${pageLabel} · ${pageIndex + 1}/${pageCount}` : t('page.none')}
         </span>
         <button
           type="button"
+          className="btn btn--icon"
+          aria-label={t('page.next')}
           disabled={!pageCount || pageIndex >= pageCount - 1}
           onClick={() => setActivePage(pageIndex + 1)}
         >
-          Next
+          ›
         </button>
       </div>
 
-      <div className="toolbar__group" aria-label="Tools">
-        {tools.map((candidate) => (
-          <button
-            key={candidate}
-            type="button"
-            className={tool === candidate ? 'is-active' : ''}
-            onClick={() => setTool(candidate)}
+      <div className="topbar__group">
+        <button
+          type="button"
+          className="btn btn--icon"
+          aria-label={t('action.undo')}
+          title={t('action.undo')}
+          disabled={!canUndo}
+          onClick={onUndo}
+        >
+          ↶
+        </button>
+        <button
+          type="button"
+          className="btn btn--icon"
+          aria-label={t('action.redo')}
+          title={t('action.redo')}
+          disabled={!canRedo}
+          onClick={onRedo}
+        >
+          ↷
+        </button>
+      </div>
+
+      <div className="topbar__group">
+        <div
+          className="segmented"
+          role="group"
+          aria-label={`${t('tool.draw')} / ${t('tool.edit')} / ${t('tool.pan')}`}
+        >
+          {tools.map((candidate) => (
+            <button
+              key={candidate}
+              type="button"
+              className="segmented__option"
+              aria-pressed={tool === candidate}
+              onClick={() => setTool(candidate)}
+            >
+              {t(`tool.${candidate}`)}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {tool === 'draw' ? (
+        <div className="topbar__group">
+          <div
+            className="segmented"
+            role="group"
+            aria-label={`${t('kind.facility')} / ${t('kind.store')}`}
           >
-            {toolLabel(candidate)}
+            <button
+              type="button"
+              className="segmented__option"
+              aria-pressed={drawKind === 'facility'}
+              onClick={() => setDrawKind('facility')}
+            >
+              {t('kind.facility')}
+            </button>
+            <button
+              type="button"
+              className="segmented__option"
+              aria-pressed={drawKind === 'store'}
+              onClick={() => setDrawKind('store')}
+            >
+              {t('kind.store')}
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      <div className="topbar__group topbar__group--end">
+        <div className="segmented" role="group" aria-label={t('lang.label')}>
+          <button
+            type="button"
+            className="segmented__option"
+            aria-pressed={locale === 'ja'}
+            onClick={() => setLocale('ja')}
+          >
+            {t('lang.ja')}
           </button>
-        ))}
-      </div>
-
-      <div className="toolbar__group" aria-label="Draw kind">
+          <button
+            type="button"
+            className="segmented__option"
+            aria-pressed={locale === 'en'}
+            onClick={() => setLocale('en')}
+          >
+            {t('lang.en')}
+          </button>
+        </div>
         <button
           type="button"
-          className={drawKind === 'facility' ? 'is-active' : ''}
-          onClick={() => setDrawKind('facility')}
+          className="btn btn--primary"
+          disabled={areaCount < 1 || generating}
+          onClick={onGenerateReport}
         >
-          施設
+          {generating ? t('action.generating') : t('action.generateReport')}
         </button>
-        <button
-          type="button"
-          className={drawKind === 'store' ? 'is-active' : ''}
-          onClick={() => setDrawKind('store')}
-        >
-          店舗
+        <button type="button" className="btn" onClick={onShowShortcuts}>
+          {t('action.help')}
         </button>
-      </div>
-
-      <div className="toolbar__group">
-        <button type="button" onClick={() => setZoom(zoom / 1.2)}>Zoom Out</button>
-        <span className="toolbar__label">{Math.round(zoom * 100)}%</span>
-        <button type="button" onClick={() => setZoom(zoom * 1.2)}>Zoom In</button>
-        <button
-          type="button"
-          onClick={() => {
-            setZoom(1)
-            setPan({ x: 0, y: 0 })
-          }}
-        >
-          Fit
+        <button type="button" className="btn topbar__drawer-toggle" onClick={onToggleInspector}>
+          {t('action.inspector')}
         </button>
-      </div>
-
-      <div className="toolbar__group" aria-label="Legend">
-        <button
-          type="button"
-          className={legendVisible ? 'is-active' : ''}
-          onClick={() => setLegendVisible(!legendVisible)}
-        >
-          Legend
-        </button>
-        <button
-          type="button"
-          className={legendOrientation === 'vertical' ? 'is-active' : ''}
-          onClick={() => setLegendOrientation('vertical')}
-        >
-          Vertical
-        </button>
-        <button
-          type="button"
-          className={legendOrientation === 'horizontal' ? 'is-active' : ''}
-          onClick={() => setLegendOrientation('horizontal')}
-        >
-          Horizontal
-        </button>
-        <button type="button" onClick={() => setLegendScale(legendScale / 1.25)}>A−</button>
-        <span className="toolbar__label">{Math.round(legendScale * 100)}%</span>
-        <button type="button" onClick={() => setLegendScale(legendScale * 1.25)}>A+</button>
-      </div>
-
-      <div className="toolbar__group" aria-label="Store tags">
-        <button
-          type="button"
-          className={storeLabelMode === 'code' ? 'is-active' : ''}
-          onClick={() => setStoreLabelMode('code')}
-        >
-          Code
-        </button>
-        <button
-          type="button"
-          className={storeLabelMode === 'number' ? 'is-active' : ''}
-          onClick={() => setStoreLabelMode('number')}
-        >
-          Number
-        </button>
-        <button
-          type="button"
-          className={storeLabelMode === 'off' ? 'is-active' : ''}
-          onClick={() => setStoreLabelMode('off')}
-        >
-          Off
-        </button>
-      </div>
-
-      <div className="toolbar__group toolbar__group--end">
-        <button type="button" disabled={areaCount < 1} onClick={onGenerateReport}>
-          Generate Report
-        </button>
-        <button type="button" onClick={onShowShortcuts}>Shortcuts (?)</button>
       </div>
     </header>
   )

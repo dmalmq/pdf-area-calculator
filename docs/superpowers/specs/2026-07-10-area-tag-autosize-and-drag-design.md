@@ -3,6 +3,7 @@
 ## Problem
 
 Each area on the canvas draws a "tag" at its polygon centroid:
+
 - **Facility** tags show two lines: the facility name and its area (`<n> m²`, or `unscaled`).
 - **Store** tags show one line: the store code (e.g. `S本館001`).
 
@@ -111,6 +112,7 @@ This mirrors the prefix-strip + `/\d+/` approach already in `nextStoreCode`.
 ### 3. State, actions, persistence
 
 `types.ts`:
+
 - `Area.labelOffset?: Pt` — tag position as a delta from the centroid, in PDF
   points; absent = centroid. A delta so the tag follows the polygon on move/reshape.
 - `export type StoreLabelMode = 'code' | 'number' | 'off'` (next to `LegendOrientation`).
@@ -120,6 +122,7 @@ This mirrors the prefix-strip + `/\d+/` approach already in `nextStoreCode`.
   `Array<Omit<Area, 'kind'> & …>`).
 
 `store.ts`:
+
 - `initialState.storeLabelMode: 'code'`.
 - `AreaStore` gains `setAreaLabelOffset(id: string, offset: Pt): void` and
   `setStoreLabelMode(mode: StoreLabelMode): void`; `importProject`'s parameter type
@@ -130,6 +133,7 @@ This mirrors the prefix-strip + `/\d+/` approach already in `nextStoreCode`.
   `storeLabelMode: project.storeLabelMode ?? 'code'`.
 
 `App.tsx`:
+
 - `saveProject` adds `storeLabelMode: state.storeLabelMode` (areas — hence
   `labelOffset` — are already serialized whole).
 - `generateReport` passes `{ mode: state.storeLabelMode, prefixes: state.prefixes }`

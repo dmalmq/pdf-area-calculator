@@ -25,11 +25,13 @@
 ### Task 1: Store — clipboard state + copy actions
 
 **Files:**
+
 - Modify: `src/renderer/src/state/types.ts` (add `CopiedArea`, add `clipboard` to `AppState`)
 - Modify: `src/renderer/src/state/store.ts` (interface, `initialState`, two actions)
 - Test: `src/renderer/src/state/store.spec.ts`
 
 **Interfaces:**
+
 - Consumes: existing `Area`, `Pt`, `AppState`, `createAreaStore`, module-level `withName`/`withNameColor`.
 - Produces:
   - `interface CopiedArea { name: string; polygon: Pt[] }`
@@ -81,32 +83,32 @@ Add `clipboard: []` to `initialState` (after `pan: { x: 0, y: 0 }` — add a com
 Add to `src/renderer/src/state/store.spec.ts` inside `describe('area store', ...)`:
 
 ```ts
-  it('copies the selected area and nothing when no selection', () => {
-    const a = square(0, 'A')
-    const store = createAreaStore({ pages, names: ['A'], areas: [a], selectedAreaId: a.id })
+it('copies the selected area and nothing when no selection', () => {
+  const a = square(0, 'A')
+  const store = createAreaStore({ pages, names: ['A'], areas: [a], selectedAreaId: a.id })
 
-    expect(store.getState().copySelectedArea()).toBe(1)
-    expect(store.getState().clipboard).toEqual([{ name: 'A', polygon: a.polygon }])
+  expect(store.getState().copySelectedArea()).toBe(1)
+  expect(store.getState().clipboard).toEqual([{ name: 'A', polygon: a.polygon }])
 
-    store.getState().selectArea(null)
-    expect(store.getState().copySelectedArea()).toBe(0)
+  store.getState().selectArea(null)
+  expect(store.getState().copySelectedArea()).toBe(0)
+})
+
+it('copies every area on the active page', () => {
+  const store = createAreaStore({
+    pages,
+    names: ['A', 'B'],
+    areas: [square(0, 'A'), square(1, 'B'), square(0, 'A')],
+    activePageIndex: 0
   })
 
-  it('copies every area on the active page', () => {
-    const store = createAreaStore({
-      pages,
-      names: ['A', 'B'],
-      areas: [square(0, 'A'), square(1, 'B'), square(0, 'A')],
-      activePageIndex: 0
-    })
+  expect(store.getState().copyActivePage()).toBe(2)
+  expect(store.getState().clipboard.map((c) => c.name)).toEqual(['A', 'A'])
 
-    expect(store.getState().copyActivePage()).toBe(2)
-    expect(store.getState().clipboard.map((c) => c.name)).toEqual(['A', 'A'])
-
-    store.getState().setActivePage(1)
-    // page 1 has one area 'B'
-    expect(store.getState().copyActivePage()).toBe(1)
-  })
+  store.getState().setActivePage(1)
+  // page 1 has one area 'B'
+  expect(store.getState().copyActivePage()).toBe(1)
+})
 ```
 
 - [ ] **Step 4: Run tests to verify they fail**
@@ -151,10 +153,12 @@ Expected: no output (clean). Confirm the store spec is green.
 ### Task 2: Store — paste + setAreaPolygon
 
 **Files:**
+
 - Modify: `src/renderer/src/state/store.ts` (interface + two actions)
 - Test: `src/renderer/src/state/store.spec.ts`
 
 **Interfaces:**
+
 - Consumes: `clipboard`, `activePageIndex`, `withName`, `withNameColor`, `crypto.randomUUID`.
 - Produces:
   - `pasteClipboard(): number` — appends one new `Area` per clipboard entry on `activePageIndex`, fresh `id`, registers names/colors, selects the last pasted area; returns count (0 if empty).
@@ -174,48 +178,56 @@ In `src/renderer/src/state/store.ts`, add to the `AreaStore` interface (after `c
 Add to `src/renderer/src/state/store.spec.ts` inside `describe('area store', ...)`:
 
 ```ts
-  it('pastes clipboard areas onto the active page with fresh ids and selection', () => {
-    const a = square(0, 'A')
-    const store = createAreaStore({ pages, names: ['A'], areas: [a], selectedAreaId: a.id })
-    store.getState().copySelectedArea()
+it('pastes clipboard areas onto the active page with fresh ids and selection', () => {
+  const a = square(0, 'A')
+  const store = createAreaStore({ pages, names: ['A'], areas: [a], selectedAreaId: a.id })
+  store.getState().copySelectedArea()
 
-    store.getState().setActivePage(1)
-    expect(store.getState().pasteClipboard()).toBe(1)
+  store.getState().setActivePage(1)
+  expect(store.getState().pasteClipboard()).toBe(1)
 
-    const pasted = store.getState().areas.find((area) => area.pageIndex === 1 && area.name === 'A')
-    expect(pasted).toBeTruthy()
-    expect(pasted!.id).not.toBe(a.id)
-    expect(pasted!.polygon).toEqual(a.polygon)
-    expect(store.getState().selectedAreaId).toBe(pasted!.id)
+  const pasted = store.getState().areas.find((area) => area.pageIndex === 1 && area.name === 'A')
+  expect(pasted).toBeTruthy()
+  expect(pasted!.id).not.toBe(a.id)
+  expect(pasted!.polygon).toEqual(a.polygon)
+  expect(store.getState().selectedAreaId).toBe(pasted!.id)
 
-    // pasted polygon is an independent clone
-    store.getState().setAreaPolygon(pasted!.id, [{ x: 99, y: 99 }, { x: 1, y: 0 }, { x: 0, y: 1 }])
-    expect(store.getState().clipboard[0].polygon).toEqual(a.polygon)
-    expect(store.getState().areas.find((area) => area.id === a.id)!.polygon).toEqual(a.polygon)
-  })
+  // pasted polygon is an independent clone
+  store.getState().setAreaPolygon(pasted!.id, [
+    { x: 99, y: 99 },
+    { x: 1, y: 0 },
+    { x: 0, y: 1 }
+  ])
+  expect(store.getState().clipboard[0].polygon).toEqual(a.polygon)
+  expect(store.getState().areas.find((area) => area.id === a.id)!.polygon).toEqual(a.polygon)
+})
 
-  it('registers pasted names and returns 0 on empty clipboard', () => {
-    const store = createAreaStore({ pages, names: [], areas: [], activePageIndex: 0 })
-    expect(store.getState().pasteClipboard()).toBe(0)
+it('registers pasted names and returns 0 on empty clipboard', () => {
+  const store = createAreaStore({ pages, names: [], areas: [], activePageIndex: 0 })
+  expect(store.getState().pasteClipboard()).toBe(0)
 
-    store.getState().importProject({ pages, names: ['X'], areas: [square(0, 'X')] })
-    store.getState().copyActivePage()
-    store.getState().pasteClipboard()
-    expect(store.getState().names).toContain('X')
-    expect(colorForBusiness(store.getState(), 'X')).toMatch(/^#[0-9a-f]{6}$/i)
-  })
+  store.getState().importProject({ pages, names: ['X'], areas: [square(0, 'X')] })
+  store.getState().copyActivePage()
+  store.getState().pasteClipboard()
+  expect(store.getState().names).toContain('X')
+  expect(colorForBusiness(store.getState(), 'X')).toMatch(/^#[0-9a-f]{6}$/i)
+})
 
-  it('setAreaPolygon replaces the target polygon and ignores unknown ids', () => {
-    const a = square(0, 'A')
-    const store = createAreaStore({ pages, names: ['A'], areas: [a] })
-    const next = [{ x: 1, y: 1 }, { x: 2, y: 1 }, { x: 2, y: 2 }]
+it('setAreaPolygon replaces the target polygon and ignores unknown ids', () => {
+  const a = square(0, 'A')
+  const store = createAreaStore({ pages, names: ['A'], areas: [a] })
+  const next = [
+    { x: 1, y: 1 },
+    { x: 2, y: 1 },
+    { x: 2, y: 2 }
+  ]
 
-    store.getState().setAreaPolygon(a.id, next)
-    expect(store.getState().areas[0].polygon).toEqual(next)
+  store.getState().setAreaPolygon(a.id, next)
+  expect(store.getState().areas[0].polygon).toEqual(next)
 
-    store.getState().setAreaPolygon('missing', [{ x: 0, y: 0 }])
-    expect(store.getState().areas[0].polygon).toEqual(next)
-  })
+  store.getState().setAreaPolygon('missing', [{ x: 0, y: 0 }])
+  expect(store.getState().areas[0].polygon).toEqual(next)
+})
 ```
 
 Note: `colorForBusiness` is already imported at the top of the spec.
@@ -277,10 +289,12 @@ Expected: clean.
 ### Task 3: PdfStage — drag-to-move whole area (Edit tool, Shift axis-lock)
 
 **Files:**
+
 - Modify: `src/renderer/src/components/PdfStage.tsx` (`constrainDelta` helper, `DragState`, store hook, pointer down/move)
 - Test: `src/renderer/src/components/PdfStage.spec.ts`
 
 **Interfaces:**
+
 - Consumes: `setAreaPolygon(id, polygon)` from the store (Task 2), existing `findAreaAt`, `eventToPdfPt`, `selectArea`, `pan`, `selectedAreaId`, `Pt`.
 - Produces: `export function constrainDelta(delta: Pt, lockAxis: boolean): Pt`.
 
@@ -295,11 +309,11 @@ import { anchoredZoomScroll, constrainDelta, shouldPanPointer } from './PdfStage
 (replace the existing import line) and add this test inside the `describe`:
 
 ```ts
-  it('locks drag to the dominant axis when requested', () => {
-    expect(constrainDelta({ x: 5, y: 2 }, false)).toEqual({ x: 5, y: 2 })
-    expect(constrainDelta({ x: 5, y: 2 }, true)).toEqual({ x: 5, y: 0 })
-    expect(constrainDelta({ x: 2, y: 5 }, true)).toEqual({ x: 0, y: 5 })
-  })
+it('locks drag to the dominant axis when requested', () => {
+  expect(constrainDelta({ x: 5, y: 2 }, false)).toEqual({ x: 5, y: 2 })
+  expect(constrainDelta({ x: 5, y: 2 }, true)).toEqual({ x: 5, y: 0 })
+  expect(constrainDelta({ x: 2, y: 5 }, true)).toEqual({ x: 0, y: 5 })
+})
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -343,7 +357,7 @@ interface DragState {
 Add the store hook alongside the other `useAreaStore` selectors (near `moveVertex`):
 
 ```ts
-  const setAreaPolygon = useAreaStore((s) => s.setAreaPolygon)
+const setAreaPolygon = useAreaStore((s) => s.setAreaPolygon)
 ```
 
 - [ ] **Step 6: Start an area drag on Edit-tool body press**
@@ -384,24 +398,24 @@ with:
 In `onPointerMove`, after the existing vertex block:
 
 ```ts
-    if (drag.areaId && drag.vertexIndex != null) {
-      moveVertex(drag.areaId, drag.vertexIndex, pdfPt)
-      setDrag({ ...drag, moved })
-    }
+if (drag.areaId && drag.vertexIndex != null) {
+  moveVertex(drag.areaId, drag.vertexIndex, pdfPt)
+  setDrag({ ...drag, moved })
+}
 ```
 
 add:
 
 ```ts
-    if (drag.kind === 'area' && drag.areaId && drag.startPt && drag.startPolygon) {
-      const raw = { x: pdfPt.x - drag.startPt.x, y: pdfPt.y - drag.startPt.y }
-      const delta = constrainDelta(raw, event.shiftKey)
-      setAreaPolygon(
-        drag.areaId,
-        drag.startPolygon.map((pt) => ({ x: pt.x + delta.x, y: pt.y + delta.y }))
-      )
-      setDrag({ ...drag, moved })
-    }
+if (drag.kind === 'area' && drag.areaId && drag.startPt && drag.startPolygon) {
+  const raw = { x: pdfPt.x - drag.startPt.x, y: pdfPt.y - drag.startPt.y }
+  const delta = constrainDelta(raw, event.shiftKey)
+  setAreaPolygon(
+    drag.areaId,
+    drag.startPolygon.map((pt) => ({ x: pt.x + delta.x, y: pt.y + delta.y }))
+  )
+  setDrag({ ...drag, moved })
+}
 ```
 
 - [ ] **Step 8: Checkpoint**
@@ -415,11 +429,13 @@ Manual: in `npm run dev`, open a multi-page PDF, draw an area, switch to Edit, d
 ### Task 4: UI triggers — keyboard shortcuts + sidebar buttons + overlay rows
 
 **Files:**
+
 - Modify: `src/renderer/src/App.tsx` (keyboard handler, `shortcutRows`)
 - Modify: `src/renderer/src/components/Sidebar.tsx` (Copy/Paste buttons)
 - Modify: `src/renderer/src/assets/main.css` (small `.area-actions` layout rule)
 
 **Interfaces:**
+
 - Consumes: `copySelectedArea`, `copyActivePage`, `pasteClipboard`, `clipboard` from the store (Tasks 1–2); existing `showToast`, `areaStore`.
 - Produces: no new exports; wires triggers to existing store actions.
 
@@ -428,19 +444,19 @@ Manual: in `npm run dev`, open a multi-page PDF, draw an area, switch to Edit, d
 In `src/renderer/src/App.tsx`, inside the `onKeyDown` in the main `useEffect`, add this block immediately after the space-key `if (event.key === ' ') { ... }` block and before `if (event.key === 'D' || event.key === 'd')`:
 
 ```ts
-      if ((event.ctrlKey || event.metaKey) && (event.key === 'c' || event.key === 'C')) {
-        event.preventDefault()
-        const count = state.selectedAreaId ? state.copySelectedArea() : state.copyActivePage()
-        showToast(count ? `Copied ${count} area${count === 1 ? '' : 's'}` : 'No areas to copy')
-        return
-      }
+if ((event.ctrlKey || event.metaKey) && (event.key === 'c' || event.key === 'C')) {
+  event.preventDefault()
+  const count = state.selectedAreaId ? state.copySelectedArea() : state.copyActivePage()
+  showToast(count ? `Copied ${count} area${count === 1 ? '' : 's'}` : 'No areas to copy')
+  return
+}
 
-      if ((event.ctrlKey || event.metaKey) && (event.key === 'v' || event.key === 'V')) {
-        event.preventDefault()
-        const count = state.pasteClipboard()
-        showToast(count ? `Pasted ${count} area${count === 1 ? '' : 's'}` : 'Nothing to paste')
-        return
-      }
+if ((event.ctrlKey || event.metaKey) && (event.key === 'v' || event.key === 'V')) {
+  event.preventDefault()
+  const count = state.pasteClipboard()
+  showToast(count ? `Pasted ${count} area${count === 1 ? '' : 's'}` : 'Nothing to paste')
+  return
+}
 ```
 
 Then add `showToast` to that effect's dependency array so it reads `}, [shortcutsOpen, showToast])`.
@@ -451,9 +467,9 @@ Then add `showToast` to that effect's dependency array so it reads `}, [shortcut
 In `src/renderer/src/App.tsx`, add to the `shortcutRows` array (before the closing `]`):
 
 ```ts
-  ['Ctrl/Cmd + C', 'Copy selected area, or whole page if none selected'],
+;(['Ctrl/Cmd + C', 'Copy selected area, or whole page if none selected'],
   ['Ctrl/Cmd + V', 'Paste areas onto the current page'],
-  ['Drag area (Edit tool)', 'Move the whole area — hold Shift to lock the axis']
+  ['Drag area (Edit tool)', 'Move the whole area — hold Shift to lock the axis'])
 ```
 
 - [ ] **Step 3: Add Copy/Paste buttons to the Sidebar**
@@ -461,30 +477,30 @@ In `src/renderer/src/App.tsx`, add to the `shortcutRows` array (before the closi
 In `src/renderer/src/components/Sidebar.tsx`, in the "Areas on page" `<section>`, insert an actions row immediately after the `panel__header` `</div>` and before the `activePageAreas.length === 0 ? ...`:
 
 ```tsx
-        <div className="area-actions">
-          <button
-            type="button"
-            disabled={activePageAreas.length === 0}
-            onClick={() => state.copyActivePage()}
-          >
-            Copy all
-          </button>
-          <button
-            type="button"
-            disabled={state.clipboard.length === 0}
-            onClick={() => state.pasteClipboard()}
-          >
-            Paste
-          </button>
-        </div>
+<div className="area-actions">
+  <button
+    type="button"
+    disabled={activePageAreas.length === 0}
+    onClick={() => state.copyActivePage()}
+  >
+    Copy all
+  </button>
+  <button
+    type="button"
+    disabled={state.clipboard.length === 0}
+    onClick={() => state.pasteClipboard()}
+  >
+    Paste
+  </button>
+</div>
 ```
 
 Then in the `selected` panel, add a Copy button just before the "Delete selected area" button:
 
 ```tsx
-          <button type="button" onClick={() => state.copySelectedArea()}>
-            Copy area
-          </button>
+<button type="button" onClick={() => state.copySelectedArea()}>
+  Copy area
+</button>
 ```
 
 (`state` here is the full store from `useAreaStore((s) => s)`, so `state.clipboard`, `state.copyActivePage`, `state.pasteClipboard`, and `state.copySelectedArea` are all available.)
@@ -510,6 +526,7 @@ In `src/renderer/src/assets/main.css`, append:
 Run: `npm run typecheck:web` (clean)
 Run: `npx vitest run` (all specs PASS)
 Manual in `npm run dev`:
+
 - Select an area, press `Ctrl+C`, switch page, press `Ctrl+V` → the area appears at the same spot and is selected; toast shows counts.
 - With nothing selected, `Ctrl+C` copies the whole page; `Ctrl+V` on another page reproduces every area aligned.
 - Sidebar "Copy all" enables "Paste"; "Paste" adds the areas. "Copy area" in the selected panel copies one.

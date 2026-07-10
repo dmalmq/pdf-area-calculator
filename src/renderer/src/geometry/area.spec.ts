@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest'
 
-import { areaToM2, pointInPolygon, shoelacePt2 } from './area'
+import {
+  areaNetPt2,
+  areaToM2,
+  pointInArea,
+  pointInPolygon,
+  polygonCentroid,
+  shoelacePt2
+} from './area'
 import { resolveMmPerPt } from './scale'
 
 const square = [
@@ -42,5 +49,36 @@ describe('geometry helpers', () => {
     const mmPerPt = resolveMmPerPt({ kind: 'ratio', n: 1 })
     expect(areaToM2(10000, mmPerPt)).toBeCloseTo((10000 * (25.4 / 72) ** 2) / 1_000_000)
     expect(areaToM2(10000, null)).toBeNull()
+  })
+
+  it('averages polygon vertices for the centroid', () => {
+    expect(polygonCentroid(square)).toEqual({ x: 50, y: 50 })
+    expect(polygonCentroid([{ x: 2, y: 4 }])).toEqual({ x: 2, y: 4 })
+    expect(polygonCentroid([])).toEqual({ x: 0, y: 0 })
+  })
+
+  it('subtracts holes from the net area, clamped at zero', () => {
+    const hole = [
+      { x: 40, y: 40 },
+      { x: 60, y: 40 },
+      { x: 60, y: 60 },
+      { x: 40, y: 60 }
+    ]
+    expect(areaNetPt2({ polygon: square })).toBe(10000)
+    expect(areaNetPt2({ polygon: square, holes: [hole] })).toBe(9600)
+    expect(areaNetPt2({ polygon: square, holes: [square] })).toBe(0)
+  })
+
+  it('treats hole interiors as outside the area', () => {
+    const hole = [
+      { x: 40, y: 40 },
+      { x: 60, y: 40 },
+      { x: 60, y: 60 },
+      { x: 40, y: 60 }
+    ]
+    const area = { polygon: square, holes: [hole] }
+    expect(pointInArea(area, { x: 10, y: 10 })).toBe(true)
+    expect(pointInArea(area, { x: 50, y: 50 })).toBe(false)
+    expect(pointInArea(area, { x: 150, y: 50 })).toBe(false)
   })
 })

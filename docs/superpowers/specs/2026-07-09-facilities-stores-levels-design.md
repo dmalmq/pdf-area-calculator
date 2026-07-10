@@ -49,9 +49,9 @@ export type AreaKind = 'facility' | 'store'
 export interface Area {
   id: string
   pageIndex: number
-  kind: AreaKind        // NEW
-  name: string          // facility: its 施設名; store: the PARENT facility's 施設名
-  code?: string         // store only, e.g. "ts001" (editable)
+  kind: AreaKind // NEW
+  name: string // facility: its 施設名; store: the PARENT facility's 施設名
+  code?: string // store only, e.g. "ts001" (editable)
   polygon: Pt[]
 }
 ```
@@ -66,7 +66,7 @@ Facilities remain identified by name. Alongside the existing `names: string[]`
 and `colors: Record<string, string>`, add:
 
 ```ts
-prefixes: Record<string, string>   // facility name → store-code prefix (e.g. "ts")
+prefixes: Record<string, string> // facility name → store-code prefix (e.g. "ts")
 ```
 
 `prefixes` is part of `AppState` and persisted in `ProjectFile`. An unset/empty
@@ -77,8 +77,8 @@ prefix is allowed (codes become just the zero-padded number).
 Two more fields on `AppState`, both persisted in `ProjectFile`:
 
 ```ts
-legendPos: Pt | null      // top-left corner of the legend, in PDF points (bottom-left origin); null = default placement
-legendVisible: boolean    // show/hide the legend (default true)
+legendPos: Pt | null // top-left corner of the legend, in PDF points (bottom-left origin); null = default placement
+legendVisible: boolean // show/hide the legend (default true)
 ```
 
 One `legendPos` is shared by all pages. `null` renders at a default spot (top-left

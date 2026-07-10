@@ -9,8 +9,16 @@ function createWindow(): void {
   const mainWindow = new BrowserWindow({
     width: 1200,
     height: 820,
+    minWidth: 960,
+    minHeight: 680,
     show: false,
     autoHideMenuBar: true,
+    titleBarStyle: 'hidden',
+    titleBarOverlay: {
+      color: '#f7f9f7',
+      symbolColor: '#27322d',
+      height: 50
+    },
     ...(process.platform === 'linux' ? { icon } : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),

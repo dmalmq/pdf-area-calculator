@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest'
 
-import { anchoredZoomScroll, constrainDelta, doubleClickAction, shouldPanPointer, tagBoxSize } from './PdfStage'
+import {
+  anchoredZoomScroll,
+  constrainDelta,
+  doubleClickAction,
+  shouldPanPointer,
+  tagBoxSize
+} from './PdfStage'
 
 describe('PdfStage interaction helpers', () => {
   it('uses middle mouse as pan without treating it as a drawing click', () => {

@@ -48,7 +48,10 @@ export async function renderLegendPng(
   })
 
   const blob = await new Promise<Blob>((resolve, reject) => {
-    canvas.toBlob((result) => (result ? resolve(result) : reject(new Error('PNG rendering failed'))), 'image/png')
+    canvas.toBlob(
+      (result) => (result ? resolve(result) : reject(new Error('PNG rendering failed'))),
+      'image/png'
+    )
   })
   return { png: new Uint8Array(await blob.arrayBuffer()), width, height }
 }

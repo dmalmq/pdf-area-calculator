@@ -9,6 +9,9 @@ export type ScaleMode =
 
 export type Tool = 'draw' | 'edit' | 'pan'
 
+// App-level UI state for the currently running async I/O action (not persisted).
+export type BusyAction = 'open-pdf' | 'open-project' | 'save-project' | 'generate-report'
+
 export interface PageState {
   pageIndex: number // 0-based
   label: string // default `Page ${i+1}`, user-editable (e.g. "1F")
@@ -23,7 +26,8 @@ export interface Area {
   kind: AreaKind // 'facility' (measured) | 'store' (counted only)
   name: string // facility: its 施設名; store: the parent facility's 施設名
   code?: string // store only, e.g. "ts001"
-  polygon: Pt[] // vertices in PDF pt space
+  polygon: Pt[] // outer ring, vertices in PDF pt space
+  holes?: Pt[][] // interior rings (courtyards); absent/empty = solid
   labelOffset?: Pt // tag position as a delta from the centroid, in PDF points; absent = centroid
 }
 
@@ -72,6 +76,7 @@ export interface CopiedArea {
   name: string
   code?: string
   polygon: Pt[]
+  holes?: Pt[][]
 }
 
 export interface ProjectFile {
@@ -119,6 +124,9 @@ export interface AppState {
   legendScale: number
   legendOrientation: LegendOrientation
   storeLabelMode: StoreLabelMode
+  savedFingerprint: string | null
+  undoStack: string[]
+  redoStack: string[]
   clipboard: CopiedArea[]
   activeName: string | null
   activePageIndex: number
