@@ -80,6 +80,10 @@ export const messages: Record<Locale, Record<string, string>> = {
 
     'page.heading': 'ページ設定',
     'page.label': 'レベル名',
+    'pages.heading': 'ページ',
+    'pages.delete': 'ページを削除',
+    'pages.moveUp': '上へ',
+    'pages.moveDown': '下へ',
     'scale.statusUnscaled': '縮尺未設定 — 面積は pt² で表示されます',
     'scale.statusScaled': '1 pt ≈ {m} m（mmPerPt = {mmPerPt}）',
     'scale.ratio': '縮尺比',
@@ -273,6 +277,10 @@ export const messages: Record<Locale, Record<string, string>> = {
 
     'page.heading': 'Page settings',
     'page.label': 'Page label',
+    'pages.heading': 'Pages',
+    'pages.delete': 'Delete page',
+    'pages.moveUp': 'Move up',
+    'pages.moveDown': 'Move down',
     'scale.statusUnscaled': 'Unscaled — areas shown in pt²',
     'scale.statusScaled': '1 pt ≈ {m} m (mmPerPt = {mmPerPt})',
     'scale.ratio': 'Drawing ratio',

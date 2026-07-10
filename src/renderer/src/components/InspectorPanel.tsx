@@ -41,6 +41,9 @@ export function InspectorPanel({
   const applyScaleToAll = useAreaStore((s) => s.applyScaleToAll)
   const setCalibrating = useAreaStore((s) => s.setCalibrating)
   const setPages = useAreaStore((s) => s.setPages)
+  const setActivePage = useAreaStore((s) => s.setActivePage)
+  const deletePage = useAreaStore((s) => s.deletePage)
+  const movePage = useAreaStore((s) => s.movePage)
   const renameArea = useAreaStore((s) => s.renameArea)
   const setStoreCode = useAreaStore((s) => s.setStoreCode)
   const setAreaKind = useAreaStore((s) => s.setAreaKind)
@@ -124,6 +127,60 @@ export function InspectorPanel({
             <p className="empty">{t('scale.openPdfFirst')}</p>
           ) : (
             <>
+              <div className="pane-section">
+                <div className="pane-section__head">
+                  <h2>{t('pages.heading')}</h2>
+                  <span className="count">{pages.length}</span>
+                </div>
+                <ul className="page-list">
+                  {pages.map((p, index) => (
+                    <li
+                      key={p.pageIndex}
+                      className={index === activePageIndex ? 'page-row is-active' : 'page-row'}
+                    >
+                      <button
+                        type="button"
+                        className="page-row__label"
+                        onClick={() => setActivePage(index)}
+                      >
+                        <span className="page-row__num">{index + 1}</span>
+                        <span className="page-row__name">{p.label}</span>
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn--icon"
+                        aria-label={t('pages.moveUp')}
+                        title={t('pages.moveUp')}
+                        disabled={index === 0}
+                        onClick={() => movePage(index, index - 1)}
+                      >
+                        ↑
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn--icon"
+                        aria-label={t('pages.moveDown')}
+                        title={t('pages.moveDown')}
+                        disabled={index === pages.length - 1}
+                        onClick={() => movePage(index, index + 1)}
+                      >
+                        ↓
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn--icon"
+                        aria-label={t('pages.delete')}
+                        title={t('pages.delete')}
+                        disabled={pages.length <= 1}
+                        onClick={() => deletePage(p.pageIndex)}
+                      >
+                        ✕
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
               <p className={mmPerPt == null ? 'warning-note' : 'hint'}>{status}</p>
 
               <label className="field">
