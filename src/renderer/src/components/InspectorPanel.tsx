@@ -57,7 +57,7 @@ export function InspectorPanel({
   const setLegendScale = useAreaStore((s) => s.setLegendScale)
   const storeLabelMode = useAreaStore((s) => s.storeLabelMode)
   const setStoreLabelMode = useAreaStore((s) => s.setStoreLabelMode)
-  const mmPerPt = useAreaStore((s) => mmPerPtFor(s, s.activePageIndex))
+  const mmPerPt = useAreaStore((s) => mmPerPtFor(s, s.pages[s.activePageIndex]?.pageIndex ?? 0))
 
   const page = pages[activePageIndex]
   const selected = areas.find((area) => area.id === selectedAreaId) ?? null
@@ -219,7 +219,7 @@ export function InspectorPanel({
                     onClick={() => {
                       const n = Number(ratio)
                       if (Number.isFinite(n) && n > 0)
-                        setScale(activePageIndex, { kind: 'ratio', n })
+                        setScale(page.pageIndex, { kind: 'ratio', n })
                     }}
                   >
                     {t('scale.set')}
@@ -261,7 +261,7 @@ export function InspectorPanel({
                   className="btn btn--block"
                   disabled={!calibrationReady || calibrationDistance === 0}
                   onClick={() => {
-                    setScale(activePageIndex, {
+                    setScale(page.pageIndex, {
                       kind: 'calibration',
                       a: calibrationDraft[0],
                       b: calibrationDraft[1],
@@ -288,7 +288,7 @@ export function InspectorPanel({
                     onClick={() => {
                       const value = Number(custom)
                       if (Number.isFinite(value) && value > 0)
-                        setScale(activePageIndex, { kind: 'custom', mmPerPt: value })
+                        setScale(page.pageIndex, { kind: 'custom', mmPerPt: value })
                     }}
                   >
                     {t('scale.set')}
@@ -300,7 +300,7 @@ export function InspectorPanel({
                 type="button"
                 className="btn btn--block"
                 disabled={mmPerPt == null}
-                onClick={() => applyScaleToAll(activePageIndex)}
+                onClick={() => applyScaleToAll(page.pageIndex)}
               >
                 {t('scale.applyAll')}
               </button>

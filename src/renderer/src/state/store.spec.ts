@@ -903,6 +903,32 @@ describe('movePage', () => {
   })
 })
 
+describe('viewed-source page cursor decoupling', () => {
+  it('copyActivePage/pasteClipboard act on the viewed source page after reorder', () => {
+    const a = square(1, 'A') // area on source page 1
+    const store = createAreaStore({ pages, names: ['A'], areas: [a], activePageIndex: 1 })
+    store.getState().movePage(1, 0) // pages -> [1,0]; cursor follows source 1 to index 0
+    expect(store.getState().activePageIndex).toBe(0)
+    expect(store.getState().copyActivePage()).toBe(1) // copies the area on the viewed source (page 1)
+    store.getState().setActivePage(1) // now viewing source 0 (empty)
+    const before = store.getState().areas.length
+    store.getState().pasteClipboard()
+    const pasted = store.getState().areas[store.getState().areas.length - 1]
+    expect(store.getState().areas.length).toBe(before + 1)
+    expect(pasted.pageIndex).toBe(0) // pasted onto the viewed source (page 0)
+  })
+
+  it('undo/redo keep activePageIndex valid and on the viewed page', () => {
+    const store = createAreaStore({ pages, names: [], areas: [], activePageIndex: 0 })
+    store.getState().movePage(0, 1) // [1,0], cursor 1 (viewing source 0)
+    store.getState().undo() // pages back to [0,1]
+    const s = store.getState()
+    expect(s.activePageIndex).toBeGreaterThanOrEqual(0)
+    expect(s.activePageIndex).toBeLessThan(s.pages.length)
+    expect(s.pages[s.activePageIndex].pageIndex).toBe(0) // still viewing source 0
+  })
+})
+
 describe('report ordering', () => {
   it('orders levels by page display order, not by source index', () => {
     const twoPages = [

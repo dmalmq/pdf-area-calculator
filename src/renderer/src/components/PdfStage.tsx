@@ -555,6 +555,7 @@ export function PdfStage({
   }
 
   const findTagAt = (viewportPoint: Pt): Area | null => {
+    if (!tagsVisible) return null
     const ctx = overlayRef.current?.getContext('2d')
     if (!ctx || !viewport) return null
     for (let i = pageAreas.length - 1; i >= 0; i -= 1) {

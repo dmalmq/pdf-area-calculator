@@ -763,7 +763,8 @@ export function createAreaStore(initial?: Partial<AppState>): StoreApi<AreaStore
 
     copyActivePage() {
       const state = get()
-      const onPage = state.areas.filter((area) => area.pageIndex === state.activePageIndex)
+      const source = state.pages[state.activePageIndex]?.pageIndex ?? state.activePageIndex
+      const onPage = state.areas.filter((area) => area.pageIndex === source)
       if (onPage.length === 0) return 0
       const copied: CopiedArea[] = onPage.map((area) => ({
         kind: area.kind,
@@ -779,7 +780,7 @@ export function createAreaStore(initial?: Partial<AppState>): StoreApi<AreaStore
     pasteClipboard() {
       const state = get()
       if (state.clipboard.length === 0) return 0
-      const pageIndex = state.activePageIndex
+      const pageIndex = state.pages[state.activePageIndex]?.pageIndex ?? state.activePageIndex
       const pasted: Area[] = []
       const working = { areas: [...state.areas], prefixes: state.prefixes }
       for (const copied of state.clipboard) {
@@ -877,30 +878,46 @@ export function createAreaStore(initial?: Partial<AppState>): StoreApi<AreaStore
       const s = get()
       if (s.undoStack.length === 0) return
       const current = snapshot(s)
+      const viewedSource = get().pages[get().activePageIndex]?.pageIndex
       suppressHistory = true
       set({
         ...restoreFields(s.undoStack[s.undoStack.length - 1]),
         undoStack: s.undoStack.slice(0, -1),
         redoStack: [...s.redoStack, current].slice(-HISTORY_LIMIT)
       })
-      set((st) => ({
-        selectedAreaId: st.areas.some((a) => a.id === st.selectedAreaId) ? st.selectedAreaId : null
-      }))
+      set((st) => {
+        const idx = st.pages.findIndex((p) => p.pageIndex === viewedSource)
+        return {
+          activePageIndex:
+            idx >= 0 ? idx : Math.min(Math.max(st.activePageIndex, 0), st.pages.length - 1),
+          selectedAreaId: st.areas.some((a) => a.id === st.selectedAreaId)
+            ? st.selectedAreaId
+            : null
+        }
+      })
       suppressHistory = false
     },
     redo() {
       const s = get()
       if (s.redoStack.length === 0) return
       const current = snapshot(s)
+      const viewedSource = get().pages[get().activePageIndex]?.pageIndex
       suppressHistory = true
       set({
         ...restoreFields(s.redoStack[s.redoStack.length - 1]),
         redoStack: s.redoStack.slice(0, -1),
         undoStack: [...s.undoStack, current].slice(-HISTORY_LIMIT)
       })
-      set((st) => ({
-        selectedAreaId: st.areas.some((a) => a.id === st.selectedAreaId) ? st.selectedAreaId : null
-      }))
+      set((st) => {
+        const idx = st.pages.findIndex((p) => p.pageIndex === viewedSource)
+        return {
+          activePageIndex:
+            idx >= 0 ? idx : Math.min(Math.max(st.activePageIndex, 0), st.pages.length - 1),
+          selectedAreaId: st.areas.some((a) => a.id === st.selectedAreaId)
+            ? st.selectedAreaId
+            : null
+        }
+      })
       suppressHistory = false
     },
 

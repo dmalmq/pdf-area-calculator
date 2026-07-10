@@ -25,7 +25,8 @@ export function Sidebar({ onCopyAll, onPaste }: SidebarProps): React.JSX.Element
   const [name, setName] = useState('')
   const state = useAreaStore((s) => s)
 
-  const activePageAreas = state.areas.filter((area) => area.pageIndex === state.activePageIndex)
+  const activeSource = state.pages[state.activePageIndex]?.pageIndex
+  const activePageAreas = state.areas.filter((area) => area.pageIndex === activeSource)
 
   const addFacility = (): void => {
     state.addName(name)
