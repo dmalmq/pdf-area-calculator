@@ -854,3 +854,15 @@ describe('undo and redo', () => {
     expect(store.getState().redoStack).toHaveLength(0)
   })
 })
+
+describe('tag visibility', () => {
+  it('defaults on, toggles, and is excluded from the saved fingerprint', () => {
+    const store = createAreaStore({ pages, names: ['A'], areas: [square(0, 'A')] })
+    expect(store.getState().tagsVisible).toBe(true)
+    const before = JSON.stringify(toProjectFile(store.getState()))
+    store.getState().setTagsVisible(false)
+    expect(store.getState().tagsVisible).toBe(false)
+    // view-only: does not change the persisted project
+    expect(JSON.stringify(toProjectFile(store.getState()))).toBe(before)
+  })
+})

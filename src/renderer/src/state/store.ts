@@ -81,6 +81,7 @@ export interface AreaStore extends AppState {
   redo(): void
   beginInteraction(): void
   endInteraction(): void
+  setTagsVisible(visible: boolean): void
 }
 
 const initialState: AppState = {
@@ -99,6 +100,7 @@ const initialState: AppState = {
   calibrating: false,
   zoom: 1,
   pan: { x: 0, y: 0 },
+  tagsVisible: true,
   clipboard: [],
   drawKind: 'facility',
   prefixes: {},
@@ -663,6 +665,10 @@ export function createAreaStore(initial?: Partial<AppState>): StoreApi<AreaStore
 
     setPages(pages) {
       set({ pages })
+    },
+
+    setTagsVisible(visible) {
+      set({ tagsVisible: visible })
     },
 
     importProject(project) {

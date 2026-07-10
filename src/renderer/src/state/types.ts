@@ -127,6 +127,7 @@ export interface AppState {
   savedFingerprint: string | null
   undoStack: string[]
   redoStack: string[]
+  tagsVisible: boolean
   clipboard: CopiedArea[]
   activeName: string | null
   activePageIndex: number
