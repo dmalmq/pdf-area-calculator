@@ -91,7 +91,11 @@ export interface LegendOptions {
   scale: number
 }
 
-async function drawLegends(doc: PDFDocument, legend: LegendOptions, pageOrder: number[]): Promise<void> {
+async function drawLegends(
+  doc: PDFDocument,
+  legend: LegendOptions,
+  pageOrder: number[]
+): Promise<void> {
   if (!legend.visible) return
   const pages = doc.getPages()
   for (let i = 0; i < pages.length; i += 1) {

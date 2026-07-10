@@ -24,11 +24,13 @@
 ### Task 1: Tag-visibility state + store action
 
 **Files:**
+
 - Modify: `src/renderer/src/state/types.ts` (`AppState`)
 - Modify: `src/renderer/src/state/store.ts` (`AreaStore` interface, `initialState`, new action)
 - Test: `src/renderer/src/state/store.spec.ts`
 
 **Interfaces:**
+
 - Produces: `AppState.tagsVisible: boolean`; `AreaStore.setTagsVisible(visible: boolean): void`.
 
 - [ ] **Step 1: Write the failing test** — append to `store.spec.ts` (inside the top-level, after the existing `describe` blocks):
@@ -55,7 +57,7 @@ Expected: FAIL — `tagsVisible` is `undefined` / `setTagsVisible is not a funct
 - [ ] **Step 3: Add the state field to `AppState`** in `types.ts`. Find the `AppState` interface and add after `redoStack: string[]`:
 
 ```ts
-  tagsVisible: boolean
+tagsVisible: boolean
 ```
 
 - [ ] **Step 4: Add to `initialState`** in `store.ts` (the `const initialState: AppState = { … }` block). Add after `pan: { x: 0, y: 0 },`:
@@ -95,21 +97,26 @@ git commit -m "feat: add view-only tagsVisible state and setTagsVisible action"
 ### Task 2: Tag toggle UI — canvas gate, toolbar button, T key
 
 **Files:**
+
 - Modify: `src/renderer/src/components/PdfStage.tsx` (`drawPolygon` tag block + draw-effect deps + store hook)
 - Modify: `src/renderer/src/components/Toolbar.tsx` (button + store hooks)
 - Modify: `src/renderer/src/App.tsx` (keyboard handler + `shortcutRows`)
 - Modify: `src/renderer/src/i18n/messages.ts` (ja + en)
 
 **Interfaces:**
+
 - Consumes: `tagsVisible`, `setTagsVisible` from the store (Task 1).
 
 - [ ] **Step 1: Add i18n keys** in `messages.ts`. In BOTH the `ja` block and the `en` block, add next to the other `action.*` keys:
 
 ja:
+
 ```ts
     'action.tags': 'タグ',
 ```
+
 en:
+
 ```ts
     'action.tags': 'Tags',
 ```
@@ -117,10 +124,13 @@ en:
 And next to the other `shortcuts.*` keys, add a help-row description:
 
 ja:
+
 ```ts
     'shortcuts.tags': 'すべてのタグ表示を切替',
 ```
+
 en:
+
 ```ts
     'shortcuts.tags': 'Toggle all tags',
 ```
@@ -134,7 +144,7 @@ en:
 - [ ] **Step 3: Gate tags on the canvas** in `PdfStage.tsx`. Add a store hook near the other `useAreaStore` selectors (e.g. after `const legendVisible = useAreaStore((s) => s.legendVisible)`):
 
 ```ts
-  const tagsVisible = useAreaStore((s) => s.tagsVisible)
+const tagsVisible = useAreaStore((s) => s.tagsVisible)
 ```
 
 In `drawPolygon`, find the tag-box block that begins `if (rect) {` (immediately after `const rect = tagRect(area, ctx, viewport, state)`), and change its condition to:
@@ -148,21 +158,21 @@ Add `tagsVisible` to the dependency array of the overlay-draw `useEffect` (the o
 - [ ] **Step 4: Add the toolbar button** in `Toolbar.tsx`. Add two store hooks near the existing ones (after `const setDrawKind = useAreaStore((s) => s.setDrawKind)`):
 
 ```ts
-  const tagsVisible = useAreaStore((s) => s.tagsVisible)
-  const setTagsVisible = useAreaStore((s) => s.setTagsVisible)
+const tagsVisible = useAreaStore((s) => s.tagsVisible)
+const setTagsVisible = useAreaStore((s) => s.setTagsVisible)
 ```
 
 In the end group (`<div className="topbar__group topbar__group--end">`), add before the Help button:
 
 ```tsx
-        <button
-          type="button"
-          className="btn"
-          aria-pressed={tagsVisible}
-          onClick={() => setTagsVisible(!tagsVisible)}
-        >
-          {t('action.tags')}
-        </button>
+<button
+  type="button"
+  className="btn"
+  aria-pressed={tagsVisible}
+  onClick={() => setTagsVisible(!tagsVisible)}
+>
+  {t('action.tags')}
+</button>
 ```
 
 - [ ] **Step 5: Add the T keybind** in `App.tsx` `onKeyDown`. In the `else if` chain of single-key handlers, add after the `state.setDrawKind('store')` line:
@@ -188,10 +198,12 @@ git commit -m "feat: master tag toggle (T key + toolbar button) hides all canvas
 ### Task 3: `deletePage` store action
 
 **Files:**
+
 - Modify: `src/renderer/src/state/store.ts` (`AreaStore` interface + action)
 - Test: `src/renderer/src/state/store.spec.ts`
 
 **Interfaces:**
+
 - Produces: `AreaStore.deletePage(sourceIndex: number): void` — removes the `PageState` with `pageIndex === sourceIndex` and every area on it; keeps ≥1 page; keeps you on the page you were viewing (or its neighbor if you deleted it); clears selection if the selected area was removed.
 
 - [ ] **Step 1: Write the failing test** — append to `store.spec.ts`:
@@ -272,10 +284,12 @@ git commit -m "feat: deletePage store action (removes page + its areas, undoable
 ### Task 4: `movePage` store action
 
 **Files:**
+
 - Modify: `src/renderer/src/state/store.ts` (`AreaStore` interface + action)
 - Test: `src/renderer/src/state/store.spec.ts`
 
 **Interfaces:**
+
 - Produces: `AreaStore.movePage(from: number, to: number): void` — reorders `pages[]` by array position and keeps the currently-viewed page active.
 
 - [ ] **Step 1: Write the failing test** — append to `store.spec.ts`:
@@ -345,10 +359,12 @@ git commit -m "feat: movePage store action (reorders pages, keeps active page)"
 ### Task 5: Report level order follows display order
 
 **Files:**
+
 - Modify: `src/renderer/src/state/store.ts` (`orderedLevels`)
 - Test: `src/renderer/src/state/store.spec.ts`
 
 **Interfaces:**
+
 - Consumes/affects: `reportByLevel`, `reportByFacility`, `reportByFacilityLevel` (all call `orderedLevels`).
 
 - [ ] **Step 1: Write the failing test** — append to `store.spec.ts` (uses the exported `reportByLevel`, already imported at the top of the file):
@@ -409,9 +425,11 @@ git commit -m "feat: report level order follows page display order"
 ### Task 6: Resolve the source page in PdfStage
 
 **Files:**
+
 - Modify: `src/renderer/src/components/PdfStage.tsx`
 
 **Interfaces:**
+
 - Consumes: `pages`, `activePageIndex` from the store; the resolved source index `pages[activePageIndex].pageIndex`.
 
 This decouples the cursor from the source page so reorder/delete render correctly. Behavior is unchanged while pages are in natural order.
@@ -419,7 +437,7 @@ This decouples the cursor from the source page so reorder/delete render correctl
 - [ ] **Step 1: Add the resolved source index.** In `PdfStage.tsx`, just after the existing `const page = pages[activePageIndex]` line, add:
 
 ```ts
-  const sourceIndex = page ? page.pageIndex : 0
+const sourceIndex = page ? page.pageIndex : 0
 ```
 
 - [ ] **Step 2: Use it for the page render.** Change `pdfDoc.getPage(activePageIndex + 1)` to:
@@ -433,10 +451,10 @@ and in that render `useEffect`'s dependency array, replace `activePageIndex` wit
 - [ ] **Step 3: Use it for the areas filter.** Change the `pageAreas` memo body `areas.filter((area) => area.pageIndex === activePageIndex)` to compare with `sourceIndex`, and change its deps `[activePageIndex, areas]` to `[sourceIndex, areas]`:
 
 ```ts
-  const pageAreas = useMemo(
-    () => areas.filter((area) => area.pageIndex === sourceIndex),
-    [sourceIndex, areas]
-  )
+const pageAreas = useMemo(
+  () => areas.filter((area) => area.pageIndex === sourceIndex),
+  [sourceIndex, areas]
+)
 ```
 
 - [ ] **Step 4: Use it when creating areas.** In `closeDraft`, both `addArea({ … pageIndex: activePageIndex … })` calls (store branch and facility branch) become `pageIndex: sourceIndex`. In the `closeDraft` `useCallback` deps array, replace `activePageIndex` with `sourceIndex`.
@@ -469,22 +487,27 @@ git commit -m "refactor: resolve source PDF page via pages[activePageIndex].page
 ### Task 7: Page-list UI (delete + reorder) in the Inspector
 
 **Files:**
+
 - Modify: `src/renderer/src/components/InspectorPanel.tsx`
 - Modify: `src/renderer/src/i18n/messages.ts` (ja + en)
 
 **Interfaces:**
+
 - Consumes: `pages`, `activePageIndex`, `setActivePage`, `deletePage`, `movePage` from the store.
 
 - [ ] **Step 1: Add i18n keys** in `messages.ts`, in BOTH `ja` and `en`, next to the other `page.*` keys:
 
 ja:
+
 ```ts
     'pages.heading': 'ページ',
     'pages.delete': 'ページを削除',
     'pages.moveUp': '上へ',
     'pages.moveDown': '下へ',
 ```
+
 en:
+
 ```ts
     'pages.heading': 'Pages',
     'pages.delete': 'Delete page',
@@ -495,67 +518,63 @@ en:
 - [ ] **Step 2: Add store hooks** in `InspectorPanel.tsx` near the existing `useAreaStore` selectors (it already reads `activePageIndex`, `pages`, `setPages`). Add:
 
 ```ts
-  const setActivePage = useAreaStore((s) => s.setActivePage)
-  const deletePage = useAreaStore((s) => s.deletePage)
-  const movePage = useAreaStore((s) => s.movePage)
+const setActivePage = useAreaStore((s) => s.setActivePage)
+const deletePage = useAreaStore((s) => s.deletePage)
+const movePage = useAreaStore((s) => s.movePage)
 ```
 
 - [ ] **Step 3: Render the Pages section.** In the Page tab, inside the non-empty branch (the `<>` that follows `{!page ? (…) : (`), add this as the FIRST block, before the `status` note paragraph:
 
 ```tsx
-              <div className="pane-section">
-                <div className="pane-section__head">
-                  <h2>{t('pages.heading')}</h2>
-                  <span className="count">{pages.length}</span>
-                </div>
-                <ul className="page-list">
-                  {pages.map((p, index) => (
-                    <li
-                      key={p.pageIndex}
-                      className={index === activePageIndex ? 'page-row is-active' : 'page-row'}
-                    >
-                      <button
-                        type="button"
-                        className="page-row__label"
-                        onClick={() => setActivePage(index)}
-                      >
-                        <span className="page-row__num">{index + 1}</span>
-                        <span className="page-row__name">{p.label}</span>
-                      </button>
-                      <button
-                        type="button"
-                        className="btn btn--icon"
-                        aria-label={t('pages.moveUp')}
-                        title={t('pages.moveUp')}
-                        disabled={index === 0}
-                        onClick={() => movePage(index, index - 1)}
-                      >
-                        ↑
-                      </button>
-                      <button
-                        type="button"
-                        className="btn btn--icon"
-                        aria-label={t('pages.moveDown')}
-                        title={t('pages.moveDown')}
-                        disabled={index === pages.length - 1}
-                        onClick={() => movePage(index, index + 1)}
-                      >
-                        ↓
-                      </button>
-                      <button
-                        type="button"
-                        className="btn btn--icon"
-                        aria-label={t('pages.delete')}
-                        title={t('pages.delete')}
-                        disabled={pages.length <= 1}
-                        onClick={() => deletePage(p.pageIndex)}
-                      >
-                        ✕
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              </div>
+<div className="pane-section">
+  <div className="pane-section__head">
+    <h2>{t('pages.heading')}</h2>
+    <span className="count">{pages.length}</span>
+  </div>
+  <ul className="page-list">
+    {pages.map((p, index) => (
+      <li
+        key={p.pageIndex}
+        className={index === activePageIndex ? 'page-row is-active' : 'page-row'}
+      >
+        <button type="button" className="page-row__label" onClick={() => setActivePage(index)}>
+          <span className="page-row__num">{index + 1}</span>
+          <span className="page-row__name">{p.label}</span>
+        </button>
+        <button
+          type="button"
+          className="btn btn--icon"
+          aria-label={t('pages.moveUp')}
+          title={t('pages.moveUp')}
+          disabled={index === 0}
+          onClick={() => movePage(index, index - 1)}
+        >
+          ↑
+        </button>
+        <button
+          type="button"
+          className="btn btn--icon"
+          aria-label={t('pages.moveDown')}
+          title={t('pages.moveDown')}
+          disabled={index === pages.length - 1}
+          onClick={() => movePage(index, index + 1)}
+        >
+          ↓
+        </button>
+        <button
+          type="button"
+          className="btn btn--icon"
+          aria-label={t('pages.delete')}
+          title={t('pages.delete')}
+          disabled={pages.length <= 1}
+          onClick={() => deletePage(p.pageIndex)}
+        >
+          ✕
+        </button>
+      </li>
+    ))}
+  </ul>
+</div>
 ```
 
 - [ ] **Step 4: Add styles** in `src/renderer/src/assets/main.css`. Append:
@@ -622,11 +641,13 @@ git commit -m "feat: page list with jump, up/down reorder, and delete"
 ### Task 8: Rebuild the exported report from kept pages in order
 
 **Files:**
+
 - Modify: `src/renderer/src/report/buildReport.ts` (`drawAreaOverlays`, `drawLegends`, `buildReportPdf`)
 - Modify: `src/renderer/src/App.tsx` (`generateReport` — pass `pageOrder`)
 - Test: `src/renderer/src/report/buildReport.spec.ts`
 
 **Interfaces:**
+
 - Produces: `buildReportPdf(originalBytes, png, areas?, colors?, legend?, storeLabels?, pageOrder?: number[])` — `pageOrder` is source page indices in display order; omitted/empty ⇒ all pages in natural order.
 
 - [ ] **Step 1: Write the failing test** — append to `buildReport.spec.ts`. Add the pdf-lib import at the top if not present (`import { PDFDocument } from 'pdf-lib'`) and this block:
@@ -649,10 +670,15 @@ describe('buildReportPdf page order', () => {
 
   it('keeps only the pages in pageOrder, in that order, plus the summary page', async () => {
     const src = await threePagePdf()
-    const out = await buildReportPdf(src, PNG_1x1, [], {}, undefined, { mode: 'code', prefixes: {} }, [
-      2,
-      0
-    ])
+    const out = await buildReportPdf(
+      src,
+      PNG_1x1,
+      [],
+      {},
+      undefined,
+      { mode: 'code', prefixes: {} },
+      [2, 0]
+    )
     const doc = await PDFDocument.load(out)
     // two kept pages + one appended summary page
     expect(doc.getPageCount()).toBe(3)
@@ -675,32 +701,32 @@ Expected: FAIL — the first test returns 4 (all original pages kept) instead of
 - [ ] **Step 3: Thread `pageOrder` into `drawAreaOverlays`.** Change its signature to add a final parameter `pageOrder: number[]`, and inside the loop replace the page lookup `const page = pages[area.pageIndex]` with a mapped lookup:
 
 ```ts
-  for (const area of areas) {
-    const newIndex = pageOrder.indexOf(area.pageIndex)
-    if (newIndex < 0 || area.polygon.length < 3) continue
-    const page = pages[newIndex]
-    if (!page) continue
-    // …rest unchanged (color, holePaths, overlayPath, drawSvgPath, store label)…
-  }
+for (const area of areas) {
+  const newIndex = pageOrder.indexOf(area.pageIndex)
+  if (newIndex < 0 || area.polygon.length < 3) continue
+  const page = pages[newIndex]
+  if (!page) continue
+  // …rest unchanged (color, holePaths, overlayPath, drawSvgPath, store label)…
+}
 ```
 
 - [ ] **Step 4: Thread `pageOrder` into `drawLegends`.** Add a final parameter `pageOrder: number[]`, and change the entries lookup so it uses the source index of the new page:
 
 ```ts
-    const entries = legend.entriesForPage(pageOrder[i])
+const entries = legend.entriesForPage(pageOrder[i])
 ```
 
 - [ ] **Step 5: Rebuild the document in `buildReportPdf`.** Add `pageOrder: number[] = []` as the final parameter. Replace the top of the body (`const doc = await PDFDocument.load(originalBytes)`) with a copy-only-kept-pages build, and pass `order` down:
 
 ```ts
-  const src = await PDFDocument.load(originalBytes)
-  const order = pageOrder.length ? pageOrder : src.getPageIndices()
-  const doc = await PDFDocument.create()
-  const copied = await doc.copyPages(src, order)
-  copied.forEach((p) => doc.addPage(p))
-  const codeFont = await doc.embedFont(StandardFonts.Helvetica)
-  drawAreaOverlays(doc, areas, colors, codeFont, storeLabels, order)
-  if (legend) await drawLegends(doc, legend, order)
+const src = await PDFDocument.load(originalBytes)
+const order = pageOrder.length ? pageOrder : src.getPageIndices()
+const doc = await PDFDocument.create()
+const copied = await doc.copyPages(src, order)
+copied.forEach((p) => doc.addPage(p))
+const codeFont = await doc.embedFont(StandardFonts.Helvetica)
+drawAreaOverlays(doc, areas, colors, codeFont, storeLabels, order)
+if (legend) await drawLegends(doc, legend, order)
 ```
 
 Leave the summary-page append (everything from `const img = await doc.embedPng(png)` onward) unchanged — it adds to the new `doc`.
@@ -708,7 +734,7 @@ Leave the summary-page append (everything from `const img = await doc.embedPng(p
 - [ ] **Step 6: Pass `pageOrder` from the app** in `App.tsx` `generateReport`. Add a 7th argument to the `buildReportPdf(…)` call, after the `{ mode: state.storeLabelMode, prefixes: state.prefixes }` argument:
 
 ```ts
-        state.pages.map((p) => p.pageIndex)
+state.pages.map((p) => p.pageIndex)
 ```
 
 - [ ] **Step 7: Run tests to verify they pass**

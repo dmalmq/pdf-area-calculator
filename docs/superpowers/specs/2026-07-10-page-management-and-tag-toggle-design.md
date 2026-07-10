@@ -19,7 +19,7 @@ Today `activePageIndex` is simultaneously the `pages[]` array position, the orig
 - **`area.pageIndex` stays the stable original PDF page number** (0-based). Areas are never renumbered on delete/reorder.
 - **`pages: PageState[]` becomes an ordered, possibly-trimmed list** of the pages the user keeps. Array order = display/report order. `PageState.pageIndex` remains the source page number (no new field).
 - **`activePageIndex` becomes a pure cursor** into `pages[]`.
-- Anything that needs the *source* page resolves it as `pages[activePageIndex].pageIndex`.
+- Anything that needs the _source_ page resolves it as `pages[activePageIndex].pageIndex`.
 
 Because `pages` and `areas` are already part of `toProjectFile`, delete/reorder are captured by undo/redo and by save/load with no extra work.
 
@@ -33,7 +33,7 @@ Because `pages` and `areas` are already part of `toProjectFile`, delete/reorder 
 
 ### Rendering & navigation
 
-Replace every use of `activePageIndex` that means *"the source PDF page"* with the resolved `pages[activePageIndex].pageIndex`. Introduce a local `const sourceIndex = page?.pageIndex` in `PdfStage` (where `page = pages[activePageIndex]` already exists) and thread it through:
+Replace every use of `activePageIndex` that means _"the source PDF page"_ with the resolved `pages[activePageIndex].pageIndex`. Introduce a local `const sourceIndex = page?.pageIndex` in `PdfStage` (where `page = pages[activePageIndex]` already exists) and thread it through:
 
 - `PdfStage.tsx`: `pdfDoc.getPage(activePageIndex + 1)` → `getPage(sourceIndex + 1)`; `pageAreas` filter `area.pageIndex === activePageIndex` → `=== sourceIndex`; `addArea({ pageIndex: activePageIndex … })` → `pageIndex: sourceIndex` (store + facility draft); `facilitiesOnPage(state, activePageIndex)` → `(state, sourceIndex)` (legend draw, `legendBounds`, label-drag clamp); `mmPerPtFor(state, activePageIndex)` → `(state, sourceIndex)` (live area text, unscaled flag). Render effect deps: add `sourceIndex`/`page`.
 - `Toolbar.tsx` prev/next call `setActivePage(activePageIndex ± 1)` and the page label reads `pages[activePageIndex].label` — both operate on array position, unchanged. `setActivePage` already clamps to `[0, pages.length-1]`.

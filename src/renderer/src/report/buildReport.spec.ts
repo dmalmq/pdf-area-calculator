@@ -160,10 +160,15 @@ describe('buildReportPdf page order', () => {
 
   it('keeps only the pages in pageOrder, in that order, plus the summary page', async () => {
     const src = await threePagePdf()
-    const out = await buildReportPdf(src, onePixelPng, [], {}, undefined, { mode: 'code', prefixes: {} }, [
-      2,
-      0
-    ])
+    const out = await buildReportPdf(
+      src,
+      onePixelPng,
+      [],
+      {},
+      undefined,
+      { mode: 'code', prefixes: {} },
+      [2, 0]
+    )
     const doc = await PDFDocument.load(out)
     // two kept pages + one appended summary page
     expect(doc.getPageCount()).toBe(3)
