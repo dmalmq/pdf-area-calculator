@@ -888,3 +888,17 @@ describe('deletePage', () => {
     expect(store.getState().areas).toEqual([a, b])
   })
 })
+
+describe('movePage', () => {
+  it('reorders pages, keeps the viewed page active, and is undoable', () => {
+    const store = createAreaStore({ pages, names: [], areas: [], activePageIndex: 0 })
+
+    store.getState().movePage(0, 1)
+    expect(store.getState().pages.map((p) => p.pageIndex)).toEqual([1, 0])
+    // still viewing source page 0, now at array position 1
+    expect(store.getState().activePageIndex).toBe(1)
+
+    store.getState().undo()
+    expect(store.getState().pages.map((p) => p.pageIndex)).toEqual([0, 1])
+  })
+})
