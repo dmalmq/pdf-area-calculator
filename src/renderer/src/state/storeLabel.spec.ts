@@ -31,4 +31,8 @@ describe('storeTagLabel', () => {
   it('returns null in off mode', () => {
     expect(storeTagLabel('S本館007', 'S本館', 'off')).toBeNull()
   })
+
+  it('preserves a digit run beyond Number.MAX_SAFE_INTEGER exactly', () => {
+    expect(storeTagLabel('9007199254740993', undefined, 'number')).toBe('9007199254740993')
+  })
 })

@@ -11,8 +11,8 @@ export function storeTagLabel(
   const value = (code ?? '').trim() || '—'
   if (mode === 'code') return value
   // mode 'number': strip a matching prefix, take the first digit run as an
-  // integer (drops leading zeros); fall back to the raw value if it has no digits.
+  // integer (drops leading zeros via string normalize); fall back to the raw value if it has no digits.
   const body = prefix && value.startsWith(prefix) ? value.slice(prefix.length) : value
   const match = body.match(/\d+/)
-  return match ? String(Number.parseInt(match[0], 10)) : value
+  return match ? match[0].replace(/^0+/, '') || '0' : value
 }
