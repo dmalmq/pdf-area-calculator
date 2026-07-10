@@ -243,9 +243,10 @@ export function PdfStage({
   )
   const [drag, setDrag] = useState<DragState | null>(null)
   const page = pages[activePageIndex]
+  const sourceIndex = page ? page.pageIndex : 0
   const pageAreas = useMemo(
-    () => areas.filter((area) => area.pageIndex === activePageIndex),
-    [activePageIndex, areas]
+    () => areas.filter((area) => area.pageIndex === sourceIndex),
+    [sourceIndex, areas]
   )
   const selectedArea = areas.find((area) => area.id === selectedAreaId) ?? null
 
@@ -266,7 +267,7 @@ export function PdfStage({
       const code = nextStoreCode(areaStore.getState(), activeName)
       addArea({
         id: crypto.randomUUID(),
-        pageIndex: activePageIndex,
+        pageIndex: sourceIndex,
         kind: 'store',
         name: activeName,
         code,
@@ -275,7 +276,7 @@ export function PdfStage({
     } else {
       addArea({
         id: crypto.randomUUID(),
-        pageIndex: activePageIndex,
+        pageIndex: sourceIndex,
         kind: 'facility',
         name: activeName,
         polygon: draft
@@ -285,7 +286,7 @@ export function PdfStage({
     setHoverPt(null)
   }, [
     activeName,
-    activePageIndex,
+    sourceIndex,
     addArea,
     addHole,
     draft,
@@ -308,7 +309,7 @@ export function PdfStage({
 
     setViewport(null)
     pdfDoc
-      .getPage(activePageIndex + 1)
+      .getPage(sourceIndex + 1)
       .then((pdfPage) => {
         if (cancelled) return
         const nextViewport = pdfPage.getViewport({ scale: 1.5 })
@@ -332,7 +333,7 @@ export function PdfStage({
       cancelled = true
       renderTask?.cancel()
     }
-  }, [activePageIndex, onToast, pdfDoc])
+  }, [sourceIndex, onToast, pdfDoc])
 
   useEffect(() => {
     const scroll = scrollRef.current
@@ -396,7 +397,7 @@ export function PdfStage({
     pageAreas.forEach((area) => drawPolygon(area, area.id === selectedAreaId))
 
     if (legendVisible) {
-      const entries = facilitiesOnPage(state, activePageIndex)
+      const entries = facilitiesOnPage(state, sourceIndex)
       if (entries.length) {
         const topLeftPdf = legendPos ?? defaultLegendPos(viewport)
         const tl = viewportPt(viewport, topLeftPdf)
@@ -597,7 +598,7 @@ export function PdfStage({
 
   const legendBounds = (): { x: number; y: number; w: number; h: number } | null => {
     if (!viewport || !legendVisible) return null
-    const entries = facilitiesOnPage(state, activePageIndex)
+    const entries = facilitiesOnPage(state, sourceIndex)
     if (!entries.length) return null
     const ctx = overlayRef.current?.getContext('2d')
     if (!ctx) return null
@@ -791,7 +792,7 @@ export function PdfStage({
           y: drag.startLegendPos.y + (pdfPt.y - drag.startPt.y)
         }
         const ctx = canvas.getContext('2d')
-        const entries = facilitiesOnPage(state, activePageIndex)
+        const entries = facilitiesOnPage(state, sourceIndex)
         if (ctx && entries.length) {
           // Box size is in viewport px; convert to PDF points to clamp against the page.
           const geo = measureLegend(
@@ -873,7 +874,7 @@ export function PdfStage({
 
   const livePoly = draft.length && hoverPt ? [...draft, hoverPt] : draft
   const livePt2 = livePoly.length >= 3 ? shoelacePt2(livePoly) : 0
-  const liveText = livePt2 ? formatLiveArea(livePt2, mmPerPtFor(state, activePageIndex)) : null
+  const liveText = livePt2 ? formatLiveArea(livePt2, mmPerPtFor(state, sourceIndex)) : null
 
   const guide = holeTarget
     ? t('stage.guide.hole')
@@ -884,7 +885,7 @@ export function PdfStage({
         : tool === 'edit'
           ? t('stage.guide.edit')
           : t('stage.guide.pan')
-  const unscaled = pdfDoc != null && mmPerPtFor(state, activePageIndex) == null
+  const unscaled = pdfDoc != null && mmPerPtFor(state, sourceIndex) == null
 
   return (
     <main className="stage-shell">
