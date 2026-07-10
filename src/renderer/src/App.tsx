@@ -146,7 +146,7 @@ function App(): React.JSX.Element {
       entriesForPage: (pageIndex) => facilitiesOnPage(state, pageIndex),
       orientation: state.legendOrientation,
       scale: state.legendScale
-    })
+    }, { mode: state.storeLabelMode, prefixes: state.prefixes })
     const defaultName = `${withoutExt(state.fileName ?? 'pdf')}_areas.pdf`
     const saved = await window.api.savePdf(pdf, defaultName)
     if (saved) showToast(`Report saved to ${baseName(saved)}`)

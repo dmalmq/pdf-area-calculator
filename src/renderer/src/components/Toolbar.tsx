@@ -42,6 +42,8 @@ export function Toolbar({
   const legendOrientation = useAreaStore((s) => s.legendOrientation)
   const setLegendScale = useAreaStore((s) => s.setLegendScale)
   const setLegendOrientation = useAreaStore((s) => s.setLegendOrientation)
+  const storeLabelMode = useAreaStore((s) => s.storeLabelMode)
+  const setStoreLabelMode = useAreaStore((s) => s.setStoreLabelMode)
 
   return (
     <header className="toolbar">
@@ -137,6 +139,30 @@ export function Toolbar({
         <button type="button" onClick={() => setLegendScale(legendScale / 1.25)}>A−</button>
         <span className="toolbar__label">{Math.round(legendScale * 100)}%</span>
         <button type="button" onClick={() => setLegendScale(legendScale * 1.25)}>A+</button>
+      </div>
+
+      <div className="toolbar__group" aria-label="Store tags">
+        <button
+          type="button"
+          className={storeLabelMode === 'code' ? 'is-active' : ''}
+          onClick={() => setStoreLabelMode('code')}
+        >
+          Code
+        </button>
+        <button
+          type="button"
+          className={storeLabelMode === 'number' ? 'is-active' : ''}
+          onClick={() => setStoreLabelMode('number')}
+        >
+          Number
+        </button>
+        <button
+          type="button"
+          className={storeLabelMode === 'off' ? 'is-active' : ''}
+          onClick={() => setStoreLabelMode('off')}
+        >
+          Off
+        </button>
       </div>
 
       <div className="toolbar__group toolbar__group--end">

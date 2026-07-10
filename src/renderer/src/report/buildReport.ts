@@ -1,6 +1,7 @@
 import { PDFDocument, rgb, StandardFonts, type PDFFont, type RGB } from 'pdf-lib'
 
-import type { Area, LegendEntry, LegendOrientation, Pt } from '../state/types'
+import type { Area, LegendEntry, LegendOrientation, Pt, StoreLabelMode } from '../state/types'
+import { storeTagLabel } from '../state/storeLabel'
 import { colorForName } from '../utils/colors'
 import { renderLegendPng } from './legendImage'
 import { clampLegendTopLeft, defaultLegendTopLeft } from './legendLayout'
@@ -26,7 +27,13 @@ function centroid(points: Area['polygon']): Pt {
 
 // Store codes are ASCII, so a standard font renders them directly (facility
 // names are Japanese and stay unlabeled in-place — the legend names them).
-function drawAreaOverlays(doc: PDFDocument, areas: Area[], colors: Record<string, string>, codeFont: PDFFont): void {
+function drawAreaOverlays(
+  doc: PDFDocument,
+  areas: Area[],
+  colors: Record<string, string>,
+  codeFont: PDFFont,
+  storeLabels: { mode: StoreLabelMode; prefixes: Record<string, string> }
+): void {
   const pages = doc.getPages()
   const codeSize = 9
   for (const area of areas) {
@@ -41,16 +48,19 @@ function drawAreaOverlays(doc: PDFDocument, areas: Area[], colors: Record<string
       borderWidth: 1.5
     })
 
-    if (area.kind === 'store' && area.code) {
-      const c = centroid(area.polygon)
-      const textW = codeFont.widthOfTextAtSize(area.code, codeSize)
-      page.drawText(area.code, {
-        x: c.x - textW / 2,
-        y: c.y - codeSize / 2,
-        size: codeSize,
-        font: codeFont,
-        color: rgb(0.07, 0.09, 0.15)
-      })
+    if (area.kind === 'store') {
+      const label = storeTagLabel(area.code, storeLabels.prefixes[area.name], storeLabels.mode)
+      if (label) {
+        const c = centroid(area.polygon)
+        const textW = codeFont.widthOfTextAtSize(label, codeSize)
+        page.drawText(label, {
+          x: c.x - textW / 2,
+          y: c.y - codeSize / 2,
+          size: codeSize,
+          font: codeFont,
+          color: rgb(0.07, 0.09, 0.15)
+        })
+      }
     }
   }
 }
@@ -84,11 +94,12 @@ export async function buildReportPdf(
   png: Uint8Array,
   areas: Area[] = [],
   colors: Record<string, string> = {},
-  legend?: LegendOptions
+  legend?: LegendOptions,
+  storeLabels: { mode: StoreLabelMode; prefixes: Record<string, string> } = { mode: 'code', prefixes: {} }
 ): Promise<Uint8Array> {
   const doc = await PDFDocument.load(originalBytes)
   const codeFont = await doc.embedFont(StandardFonts.Helvetica)
-  drawAreaOverlays(doc, areas, colors, codeFont)
+  drawAreaOverlays(doc, areas, colors, codeFont, storeLabels)
   if (legend) await drawLegends(doc, legend)
 
   const img = await doc.embedPng(png)
