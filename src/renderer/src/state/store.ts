@@ -14,6 +14,7 @@ import type {
   FacilityRow,
   LegendEntry,
   LegendOrientation,
+  StoreLabelMode,
   LevelRow,
   PageState,
   Pt,
@@ -52,6 +53,7 @@ export interface AreaStore extends AppState {
     legendVisible?: boolean
     legendScale?: number
     legendOrientation?: LegendOrientation
+    storeLabelMode?: StoreLabelMode
     fileName?: string | null
     pdfPath?: string | null
   }): void
@@ -59,6 +61,8 @@ export interface AreaStore extends AppState {
   copyActivePage(): number
   pasteClipboard(): number
   setAreaPolygon(id: string, polygon: Pt[]): void
+  setAreaLabelOffset(id: string, offset: Pt): void
+  setStoreLabelMode(mode: StoreLabelMode): void
   setDrawKind(kind: AreaKind): void
   setFacilityPrefix(name: string, prefix: string): void
   setStoreCode(id: string, code: string): void
@@ -90,7 +94,8 @@ const initialState: AppState = {
   legendPos: null,
   legendVisible: true,
   legendScale: 1,
-  legendOrientation: 'vertical'
+  legendOrientation: 'vertical',
+  storeLabelMode: 'code',
 }
 
 function withName(names: string[], raw: string): string[] {
@@ -472,7 +477,8 @@ export function createAreaStore(initial?: Partial<AppState>): StoreApi<AreaStore
           kind: area.kind ?? 'facility',
           name: area.name,
           code: area.code,
-          polygon: area.polygon
+          polygon: area.polygon,
+          labelOffset: area.labelOffset
         })),
         names: project.names,
         colors: projectColors(project.names, project.colors),
@@ -481,6 +487,7 @@ export function createAreaStore(initial?: Partial<AppState>): StoreApi<AreaStore
         legendVisible: project.legendVisible ?? true,
         legendScale: clampLegendScale(project.legendScale),
         legendOrientation: project.legendOrientation ?? 'vertical',
+        storeLabelMode: project.storeLabelMode ?? 'code',
         activeName: project.names[0] ?? null,
         selectedAreaId: null,
         activePageIndex: 0,
@@ -553,6 +560,16 @@ export function createAreaStore(initial?: Partial<AppState>): StoreApi<AreaStore
       set((state) => ({
         areas: state.areas.map((area) => (area.id === id ? { ...area, polygon } : area))
       }))
+    },
+
+    setAreaLabelOffset(id, offset) {
+      set((state) => ({
+        areas: state.areas.map((area) => (area.id === id ? { ...area, labelOffset: offset } : area))
+      }))
+    },
+
+    setStoreLabelMode(mode) {
+      set({ storeLabelMode: mode })
     },
 
     setDrawKind(kind) {

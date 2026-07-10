@@ -24,6 +24,7 @@ export interface Area {
   name: string // facility: its 施設名; store: the parent facility's 施設名
   code?: string // store only, e.g. "ts001"
   polygon: Pt[] // vertices in PDF pt space
+  labelOffset?: Pt // tag position as a delta from the centroid, in PDF points; absent = centroid
 }
 
 export interface ReportRow {
@@ -64,6 +65,8 @@ export interface LegendEntry {
 
 export type LegendOrientation = 'vertical' | 'horizontal'
 
+export type StoreLabelMode = 'code' | 'number' | 'off'
+
 export interface CopiedArea {
   kind: AreaKind
   name: string
@@ -84,6 +87,7 @@ export interface ProjectFile {
   legendVisible?: boolean
   legendScale?: number
   legendOrientation?: LegendOrientation
+  storeLabelMode?: StoreLabelMode
 }
 
 export interface PdfOpenResult {
@@ -114,6 +118,7 @@ export interface AppState {
   legendVisible: boolean
   legendScale: number
   legendOrientation: LegendOrientation
+  storeLabelMode: StoreLabelMode
   clipboard: CopiedArea[]
   activeName: string | null
   activePageIndex: number

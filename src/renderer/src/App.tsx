@@ -81,7 +81,8 @@ function App(): React.JSX.Element {
       legendPos: state.legendPos,
       legendVisible: state.legendVisible,
       legendScale: state.legendScale,
-      legendOrientation: state.legendOrientation
+      legendOrientation: state.legendOrientation,
+      storeLabelMode: state.storeLabelMode
     }
     const defaultName = `${withoutExt(state.fileName ?? 'pdf-area-calculator')}_project.json`
     const saved = await window.api.saveProject(project, defaultName)
