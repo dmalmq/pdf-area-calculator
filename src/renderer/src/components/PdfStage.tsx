@@ -388,6 +388,9 @@ export function PdfStage({ calibrationDraft, onCalibrationPoint, onToast }: PdfS
         ctx.fillRect(pt.x - 4, pt.y - 4, 8, 8)
         ctx.strokeRect(pt.x - 4, pt.y - 4, 8, 8)
       })
+      ctx.font = `${TAG.weight} ${TAG.font}px ${REPORT_FONT_FAMILY}`
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'middle'
       pts.forEach((pt, index) => {
         const next = pts[(index + 1) % pts.length]
         const mid = { x: (pt.x + next.x) / 2, y: (pt.y + next.y) / 2 }
