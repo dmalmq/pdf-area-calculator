@@ -866,3 +866,25 @@ describe('tag visibility', () => {
     expect(JSON.stringify(toProjectFile(store.getState()))).toBe(before)
   })
 })
+
+describe('deletePage', () => {
+  it('removes the page and its areas, keeps >=1, and is undoable', () => {
+    const a = square(0, 'A')
+    const b = square(1, 'B')
+    const store = createAreaStore({ pages, names: ['A', 'B'], areas: [a, b], activePageIndex: 1 })
+
+    store.getState().deletePage(1)
+    expect(store.getState().pages.map((p) => p.pageIndex)).toEqual([0])
+    expect(store.getState().areas).toEqual([a])
+    expect(store.getState().activePageIndex).toBe(0)
+
+    // cannot delete the final remaining page
+    store.getState().deletePage(0)
+    expect(store.getState().pages).toHaveLength(1)
+
+    // undo restores page 1 and area b together
+    store.getState().undo()
+    expect(store.getState().pages.map((p) => p.pageIndex)).toEqual([0, 1])
+    expect(store.getState().areas).toEqual([a, b])
+  })
+})

@@ -45,6 +45,7 @@ export interface AreaStore extends AppState {
   setPan(pan: Pt): void
   setCalibrating(calibrating: boolean): void
   setPages(pages: PageState[]): void
+  deletePage(sourceIndex: number): void
   importProject(project: {
     pages: PageState[]
     areas: Array<Omit<Area, 'kind'> & { kind?: AreaKind }>
@@ -665,6 +666,26 @@ export function createAreaStore(initial?: Partial<AppState>): StoreApi<AreaStore
 
     setPages(pages) {
       set({ pages })
+    },
+
+    deletePage(sourceIndex) {
+      const state = get()
+      if (state.pages.length <= 1) return
+      const pages = state.pages.filter((p) => p.pageIndex !== sourceIndex)
+      if (pages.length === state.pages.length) return
+      const activeSource = state.pages[state.activePageIndex]?.pageIndex
+      const activePageIndex =
+        activeSource === sourceIndex
+          ? Math.min(state.activePageIndex, pages.length - 1)
+          : Math.max(
+              0,
+              pages.findIndex((p) => p.pageIndex === activeSource)
+            )
+      const areas = state.areas.filter((area) => area.pageIndex !== sourceIndex)
+      const selectedAreaId = areas.some((area) => area.id === state.selectedAreaId)
+        ? state.selectedAreaId
+        : null
+      set({ pages, areas, activePageIndex, selectedAreaId })
     },
 
     setTagsVisible(visible) {
