@@ -11,7 +11,8 @@ import {
   nextStoreCode,
   useAreaStore
 } from '../state/store'
-import type { Area, LegendOrientation, Pt, Tool } from '../state/types'
+import { storeTagLabel } from '../state/storeLabel'
+import type { AppState, Area, LegendOrientation, Pt, Tool } from '../state/types'
 import {
   clampLegendTopLeft,
   defaultLegendTopLeft,
@@ -79,6 +80,47 @@ function centroid(poly: Pt[]): Pt {
 }
 
 const LEGEND = LEGEND_LAYOUT
+
+const TAG = { font: 13, weight: 600, lineH: 15, padX: 10, padY: 8 }
+
+// Tag box (screen px) sized to its text: widest line + horizontal padding both
+// sides; one line-height per line + vertical padding. Auto-grows so long names fit.
+export function tagBoxSize(lineWidths: number[]): { width: number; height: number } {
+  return {
+    width: Math.max(0, ...lineWidths) + TAG.padX * 2,
+    height: lineWidths.length * TAG.lineH + TAG.padY * 2
+  }
+}
+
+// Lines for an area's tag. Facility → name + area. Store → its display label
+// (code/number), or [] when the store label is off (no tag drawn).
+function tagLines(area: Area, state: Pick<AppState, 'pages' | 'prefixes' | 'storeLabelMode'>): string[] {
+  if (area.kind === 'store') {
+    const label = storeTagLabel(area.code, state.prefixes[area.name], state.storeLabelMode)
+    return label == null ? [] : [label]
+  }
+  const scaled = areaM2(state, area)
+  return [area.name, scaled == null ? 'unscaled' : `${scaled.toFixed(2)} m²`]
+}
+
+// The tag's screen-px rectangle + lines, or null when there is no tag (off store).
+// centroid + labelOffset (PDF pt) → viewport px, auto-sized, centered. Shared by
+// the draw path and hit-testing so the drawn box and the grabbable box match.
+function tagRect(
+  area: Area,
+  ctx: CanvasRenderingContext2D,
+  viewport: PageViewport,
+  state: Pick<AppState, 'pages' | 'prefixes' | 'storeLabelMode'>
+): { x: number; y: number; w: number; h: number; lines: string[] } | null {
+  const lines = tagLines(area, state)
+  if (!lines.length) return null
+  const anchor = centroid(area.polygon)
+  const offset = area.labelOffset ?? { x: 0, y: 0 }
+  const center = viewportPt(viewport, { x: anchor.x + offset.x, y: anchor.y + offset.y })
+  ctx.font = `${TAG.weight} ${TAG.font}px ${REPORT_FONT_FAMILY}`
+  const { width, height } = tagBoxSize(lines.map((line) => ctx.measureText(line).width))
+  return { x: center.x - width / 2, y: center.y - height / 2, w: width, h: height, lines }
+}
 
 function measureLegend(
   ctx: CanvasRenderingContext2D,
@@ -260,21 +302,20 @@ export function PdfStage({ calibrationDraft, onCalibrationPoint, onToast }: PdfS
       ctx.lineWidth = selected ? 3 : 1.5
       ctx.stroke()
 
-      const labelPt = viewportPt(viewport, centroid(area.polygon))
-      const scaled = areaM2(state, area)
-      const lines =
-        area.kind === 'store'
-          ? [area.code || '—']
-          : [area.name, scaled == null ? 'unscaled' : `${scaled.toFixed(2)} m²`]
-      ctx.font = `600 13px ${REPORT_FONT_FAMILY}`
-      ctx.textAlign = 'center'
-      ctx.textBaseline = 'middle'
-      ctx.fillStyle = '#111827'
-      ctx.fillRect(labelPt.x - 58, labelPt.y - 20, 116, 40)
-      ctx.strokeStyle = '#ffffff'
-      ctx.strokeRect(labelPt.x - 58, labelPt.y - 20, 116, 40)
-      ctx.fillStyle = '#ffffff'
-      lines.forEach((line, index) => ctx.fillText(line, labelPt.x, labelPt.y - 7 + index * 15))
+      const rect = tagRect(area, ctx, viewport, state)
+      if (rect) {
+        ctx.font = `${TAG.weight} ${TAG.font}px ${REPORT_FONT_FAMILY}`
+        ctx.textAlign = 'center'
+        ctx.textBaseline = 'middle'
+        ctx.fillStyle = '#111827'
+        ctx.fillRect(rect.x, rect.y, rect.w, rect.h)
+        ctx.strokeStyle = '#ffffff'
+        ctx.strokeRect(rect.x, rect.y, rect.w, rect.h)
+        ctx.fillStyle = '#ffffff'
+        rect.lines.forEach((line, index) =>
+          ctx.fillText(line, rect.x + rect.w / 2, rect.y + TAG.padY + TAG.lineH / 2 + index * TAG.lineH)
+        )
+      }
     }
 
     pageAreas.forEach((area) => drawPolygon(area, area.id === selectedAreaId))
