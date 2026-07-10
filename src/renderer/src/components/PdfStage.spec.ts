@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { anchoredZoomScroll, constrainDelta, shouldPanPointer } from './PdfStage'
+import { anchoredZoomScroll, constrainDelta, doubleClickAction, shouldPanPointer } from './PdfStage'
 
 describe('PdfStage interaction helpers', () => {
   it('uses middle mouse as pan without treating it as a drawing click', () => {
@@ -28,5 +28,11 @@ describe('PdfStage interaction helpers', () => {
     expect(constrainDelta({ x: 5, y: 2 }, true)).toEqual({ x: 5, y: 0 })
     expect(constrainDelta({ x: 2, y: 5 }, true)).toEqual({ x: 0, y: 5 })
     expect(constrainDelta({ x: 3, y: 3 }, true)).toEqual({ x: 3, y: 0 })
+  })
+
+  it('treats a double-click as select unless a polygon is in progress', () => {
+    expect(doubleClickAction(0)).toBe('selectArea')
+    expect(doubleClickAction(2)).toBe('selectArea')
+    expect(doubleClickAction(3)).toBe('closeDraft')
   })
 })

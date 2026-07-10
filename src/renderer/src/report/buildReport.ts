@@ -1,6 +1,6 @@
 import { PDFDocument, rgb, StandardFonts, type PDFFont, type RGB } from 'pdf-lib'
 
-import type { Area, LegendEntry, Pt } from '../state/types'
+import type { Area, LegendEntry, LegendOrientation, Pt } from '../state/types'
 import { colorForName } from '../utils/colors'
 import { renderLegendPng } from './legendImage'
 import { clampLegendTopLeft, defaultLegendTopLeft } from './legendLayout'
@@ -59,6 +59,8 @@ export interface LegendOptions {
   visible: boolean
   pos: Pt | null // PDF-point top-left; null → default inset
   entriesForPage(pageIndex: number): LegendEntry[]
+  orientation: LegendOrientation
+  scale: number
 }
 
 async function drawLegends(doc: PDFDocument, legend: LegendOptions): Promise<void> {
@@ -67,7 +69,7 @@ async function drawLegends(doc: PDFDocument, legend: LegendOptions): Promise<voi
   for (let i = 0; i < pages.length; i += 1) {
     const entries = legend.entriesForPage(i)
     if (!entries.length) continue
-    const { png, width, height } = await renderLegendPng(entries)
+    const { png, width, height } = await renderLegendPng(entries, legend.orientation, legend.scale)
     const img = await doc.embedPng(png)
     const page = pages[i]
     const { width: pw, height: ph } = page.getSize()

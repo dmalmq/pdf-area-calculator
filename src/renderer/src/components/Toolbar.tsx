@@ -38,6 +38,10 @@ export function Toolbar({
   const setDrawKind = useAreaStore((s) => s.setDrawKind)
   const legendVisible = useAreaStore((s) => s.legendVisible)
   const setLegendVisible = useAreaStore((s) => s.setLegendVisible)
+  const legendScale = useAreaStore((s) => s.legendScale)
+  const legendOrientation = useAreaStore((s) => s.legendOrientation)
+  const setLegendScale = useAreaStore((s) => s.setLegendScale)
+  const setLegendOrientation = useAreaStore((s) => s.setLegendOrientation)
 
   return (
     <header className="toolbar">
@@ -108,16 +112,36 @@ export function Toolbar({
         </button>
       </div>
 
-      <div className="toolbar__group toolbar__group--end">
-        <button type="button" disabled={areaCount < 1} onClick={onGenerateReport}>
-          Generate Report
-        </button>
+      <div className="toolbar__group" aria-label="Legend">
         <button
           type="button"
           className={legendVisible ? 'is-active' : ''}
           onClick={() => setLegendVisible(!legendVisible)}
         >
           Legend
+        </button>
+        <button
+          type="button"
+          className={legendOrientation === 'vertical' ? 'is-active' : ''}
+          onClick={() => setLegendOrientation('vertical')}
+        >
+          Vertical
+        </button>
+        <button
+          type="button"
+          className={legendOrientation === 'horizontal' ? 'is-active' : ''}
+          onClick={() => setLegendOrientation('horizontal')}
+        >
+          Horizontal
+        </button>
+        <button type="button" onClick={() => setLegendScale(legendScale / 1.25)}>A−</button>
+        <span className="toolbar__label">{Math.round(legendScale * 100)}%</span>
+        <button type="button" onClick={() => setLegendScale(legendScale * 1.25)}>A+</button>
+      </div>
+
+      <div className="toolbar__group toolbar__group--end">
+        <button type="button" disabled={areaCount < 1} onClick={onGenerateReport}>
+          Generate Report
         </button>
         <button type="button" onClick={onShowShortcuts}>Shortcuts (?)</button>
       </div>

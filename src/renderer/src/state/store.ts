@@ -13,6 +13,7 @@ import type {
   FacilityLevelRow,
   FacilityRow,
   LegendEntry,
+  LegendOrientation,
   LevelRow,
   PageState,
   Pt,
@@ -49,6 +50,8 @@ export interface AreaStore extends AppState {
     prefixes?: Record<string, string>
     legendPos?: Pt | null
     legendVisible?: boolean
+    legendScale?: number
+    legendOrientation?: LegendOrientation
     fileName?: string | null
     pdfPath?: string | null
   }): void
@@ -61,6 +64,8 @@ export interface AreaStore extends AppState {
   setStoreCode(id: string, code: string): void
   setLegendPos(pos: Pt): void
   setLegendVisible(visible: boolean): void
+  setLegendScale(scale: number): void
+  setLegendOrientation(orientation: LegendOrientation): void
 }
 
 const initialState: AppState = {
@@ -83,7 +88,9 @@ const initialState: AppState = {
   drawKind: 'facility',
   prefixes: {},
   legendPos: null,
-  legendVisible: true
+  legendVisible: true,
+  legendScale: 1,
+  legendOrientation: 'vertical'
 }
 
 function withName(names: string[], raw: string): string[] {
@@ -97,6 +104,12 @@ const colorPattern = /^#[0-9a-f]{6}$/i
 function cleanColor(color: string | undefined): string | null {
   const value = color?.trim() ?? ''
   return colorPattern.test(value) ? value.toLowerCase() : null
+}
+
+function clampLegendScale(value: number | undefined): number {
+  return typeof value === 'number' && Number.isFinite(value)
+    ? Math.min(Math.max(value, 0.5), 4)
+    : 1
 }
 
 function withNameColor(colors: Record<string, string>, raw: string): Record<string, string> {
@@ -466,6 +479,8 @@ export function createAreaStore(initial?: Partial<AppState>): StoreApi<AreaStore
         prefixes: project.prefixes ?? {},
         legendPos: project.legendPos ?? null,
         legendVisible: project.legendVisible ?? true,
+        legendScale: clampLegendScale(project.legendScale),
+        legendOrientation: project.legendOrientation ?? 'vertical',
         activeName: project.names[0] ?? null,
         selectedAreaId: null,
         activePageIndex: 0,
@@ -564,6 +579,14 @@ export function createAreaStore(initial?: Partial<AppState>): StoreApi<AreaStore
 
     setLegendVisible(visible) {
       set({ legendVisible: visible })
+    },
+
+    setLegendScale(scale) {
+      set({ legendScale: clampLegendScale(scale) })
+    },
+
+    setLegendOrientation(orientation) {
+      set({ legendOrientation: orientation })
     }
   }))
 }

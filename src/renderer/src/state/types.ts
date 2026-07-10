@@ -62,6 +62,8 @@ export interface LegendEntry {
   color: string
 }
 
+export type LegendOrientation = 'vertical' | 'horizontal'
+
 export interface CopiedArea {
   kind: AreaKind
   name: string
@@ -80,6 +82,8 @@ export interface ProjectFile {
   prefixes?: Record<string, string>
   legendPos?: Pt | null
   legendVisible?: boolean
+  legendScale?: number
+  legendOrientation?: LegendOrientation
 }
 
 export interface PdfOpenResult {
@@ -108,6 +112,8 @@ export interface AppState {
   prefixes: Record<string, string>
   legendPos: Pt | null
   legendVisible: boolean
+  legendScale: number
+  legendOrientation: LegendOrientation
   clipboard: CopiedArea[]
   activeName: string | null
   activePageIndex: number

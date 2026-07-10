@@ -1,8 +1,8 @@
-import type { LegendEntry } from '../state/types'
-import { LEGEND_LAYOUT, REPORT_FONT_FAMILY } from './legendLayout'
+import type { LegendEntry, LegendOrientation } from '../state/types'
+import { LEGEND_LAYOUT, legendGeometry, REPORT_FONT_FAMILY } from './legendLayout'
 
 const FONT_FAMILY = REPORT_FONT_FAMILY
-const { rowH: ROW_H, padding: PADDING, swatch: SWATCH, gap: GAP, font: FONT } = LEGEND_LAYOUT
+const { swatch: SWATCH, font: FONT } = LEGEND_LAYOUT
 
 export interface LegendPng {
   png: Uint8Array
@@ -10,15 +10,20 @@ export interface LegendPng {
   height: number
 }
 
-export async function renderLegendPng(entries: LegendEntry[]): Promise<LegendPng> {
+export async function renderLegendPng(
+  entries: LegendEntry[],
+  orientation: LegendOrientation = 'vertical',
+  scale = 1
+): Promise<LegendPng> {
   const dpr = 2
   const canvas = document.createElement('canvas')
   const measureCtx = canvas.getContext('2d')
   if (!measureCtx) throw new Error('Canvas 2D context unavailable')
-  measureCtx.font = `${FONT}px ${FONT_FAMILY}`
-  const textW = Math.max(0, ...entries.map((e) => measureCtx.measureText(e.name).width))
-  const width = PADDING * 2 + SWATCH + GAP + textW
-  const height = PADDING * 2 + entries.length * ROW_H
+  const font = FONT * scale
+  measureCtx.font = `${font}px ${FONT_FAMILY}`
+  const widths = entries.map((entry) => measureCtx.measureText(entry.name).width)
+  const geo = legendGeometry(widths, orientation, scale)
+  const { width, height } = geo
 
   canvas.width = width * dpr
   canvas.height = height * dpr
@@ -31,15 +36,15 @@ export async function renderLegendPng(entries: LegendEntry[]): Promise<LegendPng
   ctx.strokeStyle = '#9ca3af'
   ctx.lineWidth = 1
   ctx.strokeRect(0.5, 0.5, width - 1, height - 1)
-  ctx.font = `${FONT}px ${FONT_FAMILY}`
+  ctx.font = `${font}px ${FONT_FAMILY}`
   ctx.textAlign = 'left'
   ctx.textBaseline = 'middle'
   entries.forEach((entry, i) => {
-    const rowY = PADDING + i * ROW_H + ROW_H / 2
+    const slot = geo.slots[i]
     ctx.fillStyle = entry.color
-    ctx.fillRect(PADDING, rowY - SWATCH / 2, SWATCH, SWATCH)
+    ctx.fillRect(slot.swatchX, slot.swatchY, SWATCH * scale, SWATCH * scale)
     ctx.fillStyle = '#111827'
-    ctx.fillText(entry.name, PADDING + SWATCH + GAP, rowY)
+    ctx.fillText(entry.name, slot.textX, slot.textY)
   })
 
   const blob = await new Promise<Blob>((resolve, reject) => {

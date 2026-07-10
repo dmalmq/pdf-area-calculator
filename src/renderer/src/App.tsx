@@ -22,7 +22,8 @@ const shortcutRows = [
   ['F / S', 'Draw kind: facility / store'],
   ['Ctrl/Cmd + C', 'Copy selected area, or whole page if none selected'],
   ['Ctrl/Cmd + V', 'Paste areas onto the current page'],
-  ['Drag area (Edit tool)', 'Move the whole area — hold Shift to lock the axis']
+  ['Drag area (Edit tool)', 'Move the whole area — hold Shift to lock the axis'],
+  ['Double-click', 'Select area under cursor (draw tool) or close the polygon']
 ]
 
 function baseName(path: string): string {
@@ -78,7 +79,9 @@ function App(): React.JSX.Element {
       colors: state.colors,
       prefixes: state.prefixes,
       legendPos: state.legendPos,
-      legendVisible: state.legendVisible
+      legendVisible: state.legendVisible,
+      legendScale: state.legendScale,
+      legendOrientation: state.legendOrientation
     }
     const defaultName = `${withoutExt(state.fileName ?? 'pdf-area-calculator')}_project.json`
     const saved = await window.api.saveProject(project, defaultName)
@@ -139,7 +142,9 @@ function App(): React.JSX.Element {
     const pdf = await buildReportPdf(state.originalBytes, png, state.areas, state.colors, {
       visible: state.legendVisible,
       pos: state.legendPos,
-      entriesForPage: (pageIndex) => facilitiesOnPage(state, pageIndex)
+      entriesForPage: (pageIndex) => facilitiesOnPage(state, pageIndex),
+      orientation: state.legendOrientation,
+      scale: state.legendScale
     })
     const defaultName = `${withoutExt(state.fileName ?? 'pdf')}_areas.pdf`
     const saved = await window.api.savePdf(pdf, defaultName)

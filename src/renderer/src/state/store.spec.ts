@@ -307,6 +307,8 @@ describe('area store', () => {
     expect(store.getState().prefixes).toEqual({})
     expect(store.getState().legendPos).toBeNull()
     expect(store.getState().legendVisible).toBe(true)
+    expect(store.getState().legendScale).toBe(1)
+    expect(store.getState().legendOrientation).toBe('vertical')
   })
 
   it('imports v2 project fields verbatim', () => {
@@ -318,12 +320,20 @@ describe('area store', () => {
       areas: [{ id: 's', pageIndex: 0, kind: 'store', name: 'A', code: 'ts001', polygon: [] }],
       prefixes: { A: 'ts' },
       legendPos: { x: 20, y: 800 },
-      legendVisible: false
+      legendVisible: false,
+      legendScale: 2,
+      legendOrientation: 'horizontal'
     })
     expect(store.getState().areas[0].kind).toBe('store')
     expect(store.getState().prefixes).toEqual({ A: 'ts' })
     expect(store.getState().legendPos).toEqual({ x: 20, y: 800 })
     expect(store.getState().legendVisible).toBe(false)
+    expect(store.getState().legendScale).toBe(2)
+    expect(store.getState().legendOrientation).toBe('horizontal')
+    store.getState().importProject({ pages, names: ['A'], areas: [], legendScale: 99 })
+    expect(store.getState().legendScale).toBe(4)
+    store.getState().importProject({ pages, names: ['A'], areas: [] })
+    expect(store.getState().legendScale).toBe(1)
   })
 
   it('reports by level, facility and facility-level (stores counted, only facilities measured)', () => {
@@ -437,5 +447,13 @@ describe('area store', () => {
     expect(store.getState().legendPos).toEqual({ x: 5, y: 9 })
     store.getState().setLegendVisible(false)
     expect(store.getState().legendVisible).toBe(false)
+    store.getState().setLegendScale(2)
+    expect(store.getState().legendScale).toBe(2)
+    store.getState().setLegendScale(0.1)
+    expect(store.getState().legendScale).toBe(0.5)
+    store.getState().setLegendScale(99)
+    expect(store.getState().legendScale).toBe(4)
+    store.getState().setLegendOrientation('horizontal')
+    expect(store.getState().legendOrientation).toBe('horizontal')
   })
 })

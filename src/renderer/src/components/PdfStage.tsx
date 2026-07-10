@@ -11,8 +11,15 @@ import {
   nextStoreCode,
   useAreaStore
 } from '../state/store'
-import type { Area, Pt, Tool } from '../state/types'
-import { clampLegendTopLeft, defaultLegendTopLeft, LEGEND_LAYOUT, REPORT_FONT_FAMILY } from '../report/legendLayout'
+import type { Area, LegendOrientation, Pt, Tool } from '../state/types'
+import {
+  clampLegendTopLeft,
+  defaultLegendTopLeft,
+  LEGEND_LAYOUT,
+  legendGeometry,
+  type LegendGeometry,
+  REPORT_FONT_FAMILY
+} from '../report/legendLayout'
 
 interface PdfStageProps {
   calibrationDraft: Pt[]
@@ -73,10 +80,14 @@ function centroid(poly: Pt[]): Pt {
 
 const LEGEND = LEGEND_LAYOUT
 
-function legendEntriesWidth(ctx: CanvasRenderingContext2D, names: string[]): number {
-  ctx.font = `${LEGEND.font}px ${REPORT_FONT_FAMILY}`
-  const textW = Math.max(0, ...names.map((n) => ctx.measureText(n).width))
-  return LEGEND.padding * 2 + LEGEND.swatch + LEGEND.gap + textW
+function measureLegend(
+  ctx: CanvasRenderingContext2D,
+  names: string[],
+  orientation: LegendOrientation,
+  k: number
+): LegendGeometry {
+  ctx.font = `${LEGEND.font * k}px ${REPORT_FONT_FAMILY}`
+  return legendGeometry(names.map((name) => ctx.measureText(name).width), orientation, k)
 }
 
 // Page size in PDF points (bottom-left origin) from the viewport's viewBox.
@@ -98,6 +109,13 @@ function formatLiveArea(pt2: number, mmPerPt: number | null): string {
 
 export function shouldPanPointer(button: number, tool: Tool): boolean {
   return button === 1 || (button === 0 && tool === 'pan')
+}
+
+// A double-click's two pointerdowns add 2 draft points in draw mode; ≤2 means
+// the draft was empty before the gesture (0 = edit/pan tools), so treat the
+// double-click as select-and-edit. ≥3 means the user is closing a polygon.
+export function doubleClickAction(draftLength: number): 'selectArea' | 'closeDraft' {
+  return draftLength <= 2 ? 'selectArea' : 'closeDraft'
 }
 
 export function anchoredZoomScroll(input: AnchoredZoomInput): Pt {
@@ -129,6 +147,8 @@ export function PdfStage({ calibrationDraft, onCalibrationPoint, onToast }: PdfS
   const calibrating = useAreaStore((s) => s.calibrating)
   const drawKind = useAreaStore((s) => s.drawKind)
   const legendVisible = useAreaStore((s) => s.legendVisible)
+  const legendScale = useAreaStore((s) => s.legendScale)
+  const legendOrientation = useAreaStore((s) => s.legendOrientation)
   const legendPos = useAreaStore((s) => s.legendPos)
   const setLegendPos = useAreaStore((s) => s.setLegendPos)
   const state = useAreaStore((s) => s)
@@ -264,23 +284,23 @@ export function PdfStage({ calibrationDraft, onCalibrationPoint, onToast }: PdfS
       if (entries.length) {
         const topLeftPdf = legendPos ?? defaultLegendPos(viewport)
         const tl = viewportPt(viewport, topLeftPdf)
-        const boxW = legendEntriesWidth(ctx, entries.map((e) => e.name))
-        const boxH = LEGEND.padding * 2 + entries.length * LEGEND.rowH
+        const k = legendScale * viewport.scale
+        const geo = measureLegend(ctx, entries.map((e) => e.name), legendOrientation, k)
         ctx.save()
         ctx.fillStyle = 'rgba(255,255,255,0.9)'
         ctx.strokeStyle = '#9ca3af'
         ctx.lineWidth = 1
-        ctx.fillRect(tl.x, tl.y, boxW, boxH)
-        ctx.strokeRect(tl.x, tl.y, boxW, boxH)
-        ctx.font = `${LEGEND.font}px ${REPORT_FONT_FAMILY}`
+        ctx.fillRect(tl.x, tl.y, geo.width, geo.height)
+        ctx.strokeRect(tl.x, tl.y, geo.width, geo.height)
+        ctx.font = `${LEGEND.font * k}px ${REPORT_FONT_FAMILY}`
         ctx.textAlign = 'left'
         ctx.textBaseline = 'middle'
         entries.forEach((entry, i) => {
-          const rowY = tl.y + LEGEND.padding + i * LEGEND.rowH + LEGEND.rowH / 2
+          const slot = geo.slots[i]
           ctx.fillStyle = entry.color
-          ctx.fillRect(tl.x + LEGEND.padding, rowY - LEGEND.swatch / 2, LEGEND.swatch, LEGEND.swatch)
+          ctx.fillRect(tl.x + slot.swatchX, tl.y + slot.swatchY, LEGEND.swatch * k, LEGEND.swatch * k)
           ctx.fillStyle = '#111827'
-          ctx.fillText(entry.name, tl.x + LEGEND.padding + LEGEND.swatch + LEGEND.gap, rowY)
+          ctx.fillText(entry.name, tl.x + slot.textX, tl.y + slot.textY)
         })
         ctx.restore()
       }
@@ -342,6 +362,8 @@ export function PdfStage({ calibrationDraft, onCalibrationPoint, onToast }: PdfS
     hoverPt,
     legendPos,
     legendVisible,
+    legendOrientation,
+    legendScale,
     pageAreas,
     selectedArea,
     selectedAreaId,
@@ -425,9 +447,8 @@ export function PdfStage({ calibrationDraft, onCalibrationPoint, onToast }: PdfS
     const ctx = overlayRef.current?.getContext('2d')
     if (!ctx) return null
     const tl = viewportPt(viewport, legendPos ?? defaultLegendPos(viewport))
-    const w = legendEntriesWidth(ctx, entries.map((e) => e.name))
-    const h = LEGEND.padding * 2 + entries.length * LEGEND.rowH
-    return { x: tl.x, y: tl.y, w, h }
+    const geo = measureLegend(ctx, entries.map((e) => e.name), legendOrientation, legendScale * viewport.scale)
+    return { x: tl.x, y: tl.y, w: geo.width, h: geo.height }
   }
 
   const onPointerDown = (event: React.PointerEvent<HTMLCanvasElement>): void => {
@@ -518,12 +539,6 @@ export function PdfStage({ calibrationDraft, onCalibrationPoint, onToast }: PdfS
       return
     }
 
-    const hitArea = draft.length === 0 ? findAreaAt(pdfPt) : null
-    if (hitArea) {
-      selectArea(hitArea.id)
-      return
-    }
-
     if (draft.length >= 3 && viewport) {
       const first = viewportPt(viewport, draft[0])
       if (distance(first, viewportPoint) <= 8) {
@@ -586,8 +601,9 @@ export function PdfStage({ calibrationDraft, onCalibrationPoint, onToast }: PdfS
         const entries = facilitiesOnPage(state, activePageIndex)
         if (ctx && entries.length) {
           // Box size is in viewport px; convert to PDF points to clamp against the page.
-          const boxW = legendEntriesWidth(ctx, entries.map((e) => e.name)) / viewport.scale
-          const boxH = (LEGEND.padding * 2 + entries.length * LEGEND.rowH) / viewport.scale
+          const geo = measureLegend(ctx, entries.map((e) => e.name), legendOrientation, legendScale * viewport.scale)
+          const boxW = geo.width / viewport.scale
+          const boxH = geo.height / viewport.scale
           const page = pageSizePdf(viewport)
           setLegendPos(clampLegendTopLeft(rawPos, page.width, page.height, boxW, boxH))
         } else {
@@ -606,10 +622,14 @@ export function PdfStage({ calibrationDraft, onCalibrationPoint, onToast }: PdfS
   const onDoubleClick = (event: React.MouseEvent<HTMLCanvasElement>): void => {
     if (!viewport || !overlayRef.current) return
     const pdfPt = eventToPdfPt(event.nativeEvent as PointerEvent, overlayRef.current, viewport)
-    const hitArea = draft.length === 0 ? findAreaAt(pdfPt) : null
-    if (hitArea) {
-      selectArea(hitArea.id)
-      setTool('edit')
+    if (doubleClickAction(draft.length) === 'selectArea') {
+      setDraft([])
+      setHoverPt(null)
+      const hitArea = findAreaAt(pdfPt)
+      if (hitArea) {
+        selectArea(hitArea.id)
+        setTool('edit')
+      }
       return
     }
     closeDraft()
