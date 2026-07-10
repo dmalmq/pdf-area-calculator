@@ -37,13 +37,16 @@ function drawAreaOverlays(
   areas: Area[],
   colors: Record<string, string>,
   codeFont: PDFFont,
-  storeLabels: { mode: StoreLabelMode; prefixes: Record<string, string> }
+  storeLabels: { mode: StoreLabelMode; prefixes: Record<string, string> },
+  pageOrder: number[]
 ): void {
   const pages = doc.getPages()
   const codeSize = 9
   for (const area of areas) {
-    const page = pages[area.pageIndex]
-    if (!page || area.polygon.length < 3) continue
+    const newIndex = pageOrder.indexOf(area.pageIndex)
+    if (newIndex < 0 || area.polygon.length < 3) continue
+    const page = pages[newIndex]
+    if (!page) continue
     const color = overlayColor(area.name, colors)
     const { height } = page.getSize()
     const holePaths = (area.holes ?? [])
@@ -88,11 +91,11 @@ export interface LegendOptions {
   scale: number
 }
 
-async function drawLegends(doc: PDFDocument, legend: LegendOptions): Promise<void> {
+async function drawLegends(doc: PDFDocument, legend: LegendOptions, pageOrder: number[]): Promise<void> {
   if (!legend.visible) return
   const pages = doc.getPages()
   for (let i = 0; i < pages.length; i += 1) {
-    const entries = legend.entriesForPage(i)
+    const entries = legend.entriesForPage(pageOrder[i])
     if (!entries.length) continue
     const { png, width, height } = await renderLegendPng(entries, legend.orientation, legend.scale)
     const img = await doc.embedPng(png)
@@ -113,12 +116,17 @@ export async function buildReportPdf(
   storeLabels: { mode: StoreLabelMode; prefixes: Record<string, string> } = {
     mode: 'code',
     prefixes: {}
-  }
+  },
+  pageOrder: number[] = []
 ): Promise<Uint8Array> {
-  const doc = await PDFDocument.load(originalBytes)
+  const src = await PDFDocument.load(originalBytes)
+  const order = pageOrder.length ? pageOrder : src.getPageIndices()
+  const doc = await PDFDocument.create()
+  const copied = await doc.copyPages(src, order)
+  copied.forEach((p) => doc.addPage(p))
   const codeFont = await doc.embedFont(StandardFonts.Helvetica)
-  drawAreaOverlays(doc, areas, colors, codeFont, storeLabels)
-  if (legend) await drawLegends(doc, legend)
+  drawAreaOverlays(doc, areas, colors, codeFont, storeLabels, order)
+  if (legend) await drawLegends(doc, legend, order)
 
   const img = await doc.embedPng(png)
   const W = 595.28

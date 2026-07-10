@@ -148,3 +148,31 @@ describe('buildReportPdf', () => {
     expect(labeled.length).toBeGreaterThan(unlabeled.length)
   })
 })
+
+describe('buildReportPdf page order', () => {
+  async function threePagePdf(): Promise<Uint8Array> {
+    const d = await PDFDocument.create()
+    d.addPage([200, 200])
+    d.addPage([200, 200])
+    d.addPage([200, 200])
+    return d.save()
+  }
+
+  it('keeps only the pages in pageOrder, in that order, plus the summary page', async () => {
+    const src = await threePagePdf()
+    const out = await buildReportPdf(src, onePixelPng, [], {}, undefined, { mode: 'code', prefixes: {} }, [
+      2,
+      0
+    ])
+    const doc = await PDFDocument.load(out)
+    // two kept pages + one appended summary page
+    expect(doc.getPageCount()).toBe(3)
+  })
+
+  it('defaults to all pages when pageOrder is omitted', async () => {
+    const src = await threePagePdf()
+    const out = await buildReportPdf(src, onePixelPng)
+    const doc = await PDFDocument.load(out)
+    expect(doc.getPageCount()).toBe(4) // 3 original + summary
+  })
+})

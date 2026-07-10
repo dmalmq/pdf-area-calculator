@@ -212,7 +212,8 @@ function App(): React.JSX.Element {
           orientation: state.legendOrientation,
           scale: state.legendScale
         },
-        { mode: state.storeLabelMode, prefixes: state.prefixes }
+        { mode: state.storeLabelMode, prefixes: state.prefixes },
+        state.pages.map((p) => p.pageIndex)
       )
       const defaultName = `${withoutExt(state.fileName ?? 'pdf')}_areas.pdf`
       const saved = await window.api.savePdf(pdf, defaultName)
