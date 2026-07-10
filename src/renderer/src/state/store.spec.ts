@@ -902,3 +902,23 @@ describe('movePage', () => {
     expect(store.getState().pages.map((p) => p.pageIndex)).toEqual([0, 1])
   })
 })
+
+describe('report ordering', () => {
+  it('orders levels by page display order, not by source index', () => {
+    const twoPages = [
+      { pageIndex: 0, label: '1F', scale: null },
+      { pageIndex: 1, label: '2F', scale: null }
+    ]
+    const a0 = square(0, 'A')
+    const a1 = square(1, 'B')
+    expect(reportByLevel({ pages: twoPages, areas: [a0, a1] }).map((r) => r.level)).toEqual([
+      '1F',
+      '2F'
+    ])
+    const reordered = [twoPages[1], twoPages[0]]
+    expect(reportByLevel({ pages: reordered, areas: [a0, a1] }).map((r) => r.level)).toEqual([
+      '2F',
+      '1F'
+    ])
+  })
+})

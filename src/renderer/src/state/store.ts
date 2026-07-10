@@ -229,7 +229,7 @@ function levelOf(state: ReportState, pageIndex: number): string {
 
 function orderedLevels(state: ReportState): string[] {
   const seen: string[] = []
-  for (const page of [...state.pages].sort((a, b) => a.pageIndex - b.pageIndex)) {
+  for (const page of state.pages) {
     if (!seen.includes(page.label)) seen.push(page.label)
   }
   return seen
