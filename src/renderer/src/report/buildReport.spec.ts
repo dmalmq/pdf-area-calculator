@@ -1,8 +1,51 @@
-import { PDFDocument } from 'pdf-lib'
+import { PDFArray, PDFDocument, PDFName, PDFRawStream } from 'pdf-lib'
 import { describe, expect, it } from 'vitest'
 import type { Area } from '../state/types'
 
 import { buildReportPdf } from './buildReport'
+import { inflateSync } from 'node:zlib'
+
+// Replays the page-0 content stream's CTM to find where the first traced path
+// vertex actually lands in device space — the check that catches an overlay
+// flipped off the page.
+async function firstOverlayDevicePoint(
+  bytes: Uint8Array
+): Promise<{ x: number; y: number } | null> {
+  const doc = await PDFDocument.load(bytes)
+  const page = doc.getPages()[0]
+  const contents = page.node.get(PDFName.of('Contents'))
+  const refs = contents instanceof PDFArray ? contents.asArray() : [contents]
+  let text = ''
+  for (const ref of refs) {
+    const stream = doc.context.lookup(ref) as PDFRawStream
+    let raw = stream.contents as Uint8Array
+    try {
+      raw = inflateSync(Buffer.from(raw))
+    } catch {
+      // stream was not flate-encoded
+    }
+    text += Buffer.from(raw).toString('latin1') + '\n'
+  }
+  const toks = text.split(/\s+/)
+  let m = [1, 0, 0, 1, 0, 0]
+  const mul = (a: number[], b: number[]): number[] => [
+    a[0] * b[0] + a[2] * b[1],
+    a[1] * b[0] + a[3] * b[1],
+    a[0] * b[2] + a[2] * b[3],
+    a[1] * b[2] + a[3] * b[3],
+    a[0] * b[4] + a[2] * b[5] + a[4],
+    a[1] * b[4] + a[3] * b[5] + a[5]
+  ]
+  for (let i = 0; i < toks.length; i += 1) {
+    if (toks[i] === 'cm') m = mul(m, toks.slice(i - 6, i).map(Number))
+    if (toks[i] === 'm') {
+      const x = Number(toks[i - 2])
+      const y = Number(toks[i - 1])
+      return { x: m[0] * x + m[2] * y + m[4], y: m[1] * x + m[3] * y + m[5] }
+    }
+  }
+  return null
+}
 
 const onePixelPng = new Uint8Array([
   137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 1, 0, 0, 0, 1, 8, 6, 0, 0,
@@ -49,6 +92,33 @@ describe('buildReportPdf', () => {
 
     expect(withOverlay.length).toBeGreaterThan(withoutOverlay.length)
     expect((await PDFDocument.load(withOverlay)).getPageCount()).toBe(2)
+  })
+
+  it('positions area overlays on the page, not flipped off the bottom', async () => {
+    const source = await PDFDocument.create()
+    source.addPage([300, 300])
+    const originalBytes = await source.save()
+    const area: Area = {
+      id: 'a',
+      pageIndex: 0,
+      kind: 'facility',
+      name: 'A',
+      polygon: [
+        { x: 40, y: 40 },
+        { x: 260, y: 40 },
+        { x: 260, y: 260 },
+        { x: 40, y: 260 }
+      ]
+    }
+
+    const out = await buildReportPdf(originalBytes, onePixelPng, [area])
+    const dev = await firstOverlayDevicePoint(out)
+
+    expect(dev).not.toBeNull()
+    expect(dev!.x).toBeGreaterThanOrEqual(0)
+    expect(dev!.x).toBeLessThanOrEqual(300)
+    expect(dev!.y).toBeGreaterThanOrEqual(0)
+    expect(dev!.y).toBeLessThanOrEqual(300)
   })
 
   it('labels store polygons with their code on the source pages', async () => {

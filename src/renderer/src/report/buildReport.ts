@@ -16,8 +16,13 @@ function overlayColor(name: string, colors: Record<string, string>): RGB {
   return colorFromHex(/^#[0-9a-f]{6}$/i.test(custom ?? '') ? custom : colorForName(name))
 }
 
-function svgPath(points: Area['polygon']): string {
-  return `${points.map((pt, index) => `${index === 0 ? 'M' : 'L'} ${pt.x} ${pt.y}`).join(' ')} Z`
+// pdf-lib's drawSvgPath flips the Y axis (SVG is y-down from the top-left) and
+// anchors at the page origin, so PDF-space (y-up) points would render below the
+// page. Convert to top-left space here and pair with `y: pageHeight` at the call.
+function svgPath(points: Area['polygon'], pageHeight: number): string {
+  return `${points
+    .map((pt, index) => `${index === 0 ? 'M' : 'L'} ${pt.x} ${pageHeight - pt.y}`)
+    .join(' ')} Z`
 }
 
 function centroid(points: Area['polygon']): Pt {
@@ -40,12 +45,17 @@ function drawAreaOverlays(
     const page = pages[area.pageIndex]
     if (!page || area.polygon.length < 3) continue
     const color = overlayColor(area.name, colors)
+    const { height } = page.getSize()
     const holePaths = (area.holes ?? [])
       .filter((ring) => ring.length >= 3)
-      .map((ring) => svgPath([...ring].reverse()))
+      .map((ring) => svgPath([...ring].reverse(), height))
       .join(' ')
-    const overlayPath = holePaths ? `${svgPath(area.polygon)} ${holePaths}` : svgPath(area.polygon)
+    const overlayPath = holePaths
+      ? `${svgPath(area.polygon, height)} ${holePaths}`
+      : svgPath(area.polygon, height)
     page.drawSvgPath(overlayPath, {
+      x: 0,
+      y: height,
       color,
       opacity: 0.12,
       borderColor: color,
