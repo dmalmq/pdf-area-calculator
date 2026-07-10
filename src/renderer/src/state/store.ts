@@ -889,7 +889,7 @@ export function createAreaStore(initial?: Partial<AppState>): StoreApi<AreaStore
         const idx = st.pages.findIndex((p) => p.pageIndex === viewedSource)
         return {
           activePageIndex:
-            idx >= 0 ? idx : Math.min(Math.max(st.activePageIndex, 0), st.pages.length - 1),
+            idx >= 0 ? idx : Math.max(0, Math.min(st.activePageIndex, st.pages.length - 1)),
           selectedAreaId: st.areas.some((a) => a.id === st.selectedAreaId)
             ? st.selectedAreaId
             : null
@@ -912,7 +912,7 @@ export function createAreaStore(initial?: Partial<AppState>): StoreApi<AreaStore
         const idx = st.pages.findIndex((p) => p.pageIndex === viewedSource)
         return {
           activePageIndex:
-            idx >= 0 ? idx : Math.min(Math.max(st.activePageIndex, 0), st.pages.length - 1),
+            idx >= 0 ? idx : Math.max(0, Math.min(st.activePageIndex, st.pages.length - 1)),
           selectedAreaId: st.areas.some((a) => a.id === st.selectedAreaId)
             ? st.selectedAreaId
             : null

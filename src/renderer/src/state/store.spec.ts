@@ -927,6 +927,13 @@ describe('viewed-source page cursor decoupling', () => {
     expect(s.activePageIndex).toBeLessThan(s.pages.length)
     expect(s.pages[s.activePageIndex].pageIndex).toBe(0) // still viewing source 0
   })
+
+  it('keeps the page cursor at 0 when undo restores an empty document', () => {
+    const store = createAreaStore({ pages: [], names: [], areas: [], activePageIndex: 0 })
+    store.getState().addName('X')
+    store.getState().undo()
+    expect(store.getState().activePageIndex).toBe(0)
+  })
 })
 
 describe('report ordering', () => {
