@@ -456,4 +456,62 @@ describe('area store', () => {
     store.getState().setLegendOrientation('horizontal')
     expect(store.getState().legendOrientation).toBe('horizontal')
   })
+
+  it('sets a per-area label offset without touching other areas', () => {
+    const a = square(0, 'A')
+    const b = square(0, 'B')
+    const store = createAreaStore({ areas: [a, b] })
+
+    store.getState().setAreaLabelOffset(a.id, { x: 5, y: -3 })
+
+    expect(store.getState().areas.find((area) => area.id === a.id)?.labelOffset).toEqual({ x: 5, y: -3 })
+    expect(store.getState().areas.find((area) => area.id === b.id)?.labelOffset).toBeUndefined()
+  })
+
+  it('defaults and sets the store label mode', () => {
+    const store = createAreaStore({})
+    expect(store.getState().storeLabelMode).toBe('code')
+    store.getState().setStoreLabelMode('number')
+    expect(store.getState().storeLabelMode).toBe('number')
+  })
+
+  it('preserves labelOffset and storeLabelMode through importProject, with defaults', () => {
+    const store = createAreaStore({})
+    store.getState().importProject({
+      pages,
+      names: ['A'],
+      areas: [
+        {
+          id: 'a1',
+          pageIndex: 0,
+          kind: 'facility',
+          name: 'A',
+          polygon: [
+            { x: 0, y: 0 },
+            { x: 1, y: 0 },
+            { x: 1, y: 1 }
+          ],
+          labelOffset: { x: 7, y: 8 }
+        },
+        {
+          id: 'a2',
+          pageIndex: 0,
+          kind: 'facility',
+          name: 'A',
+          polygon: [
+            { x: 0, y: 0 },
+            { x: 1, y: 0 },
+            { x: 1, y: 1 }
+          ]
+        }
+      ],
+      storeLabelMode: 'number'
+    })
+    expect(store.getState().areas[0].labelOffset).toEqual({ x: 7, y: 8 })
+    expect(store.getState().areas[1].labelOffset).toBeUndefined()
+    expect(store.getState().storeLabelMode).toBe('number')
+
+    store.getState().importProject({ pages, names: ['A'], areas: [] })
+    expect(store.getState().storeLabelMode).toBe('code')
+  })
 })

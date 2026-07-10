@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { anchoredZoomScroll, constrainDelta, doubleClickAction, shouldPanPointer } from './PdfStage'
+import { anchoredZoomScroll, constrainDelta, doubleClickAction, shouldPanPointer, tagBoxSize } from './PdfStage'
 
 describe('PdfStage interaction helpers', () => {
   it('uses middle mouse as pan without treating it as a drawing click', () => {
@@ -34,5 +34,19 @@ describe('PdfStage interaction helpers', () => {
     expect(doubleClickAction(0)).toBe('selectArea')
     expect(doubleClickAction(2)).toBe('selectArea')
     expect(doubleClickAction(3)).toBe('closeDraft')
+  })
+})
+
+describe('tagBoxSize', () => {
+  it('sizes a one-line tag: widest line + padding, one line-height + padding', () => {
+    expect(tagBoxSize([40])).toEqual({ width: 60, height: 31 })
+  })
+
+  it('sizes a two-line tag to the widest line and grows taller per line', () => {
+    expect(tagBoxSize([120, 30])).toEqual({ width: 140, height: 46 })
+  })
+
+  it('falls back to padding-only when there are no lines', () => {
+    expect(tagBoxSize([])).toEqual({ width: 20, height: 16 })
   })
 })
