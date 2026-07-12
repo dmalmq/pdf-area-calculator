@@ -1,13 +1,11 @@
 import { PDFArray, PDFDocument, PDFName, PDFRawStream } from 'pdf-lib'
-import { describe, expect, it } from 'vitest'
-import type { Area } from '../state/types'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import type { Area, DetailPage } from '../state/types'
 
 import { buildReportPdf } from './buildReport'
+import { detailFit } from '../geometry/detailFit'
 import { inflateSync } from 'node:zlib'
 
-// Replays the page-0 content stream's CTM to find where the first traced path
-// vertex actually lands in device space — the check that catches an overlay
-// flipped off the page.
 async function firstOverlayDevicePoint(
   bytes: Uint8Array
 ): Promise<{ x: number; y: number } | null> {
@@ -26,9 +24,9 @@ async function firstOverlayDevicePoint(
     }
     text += Buffer.from(raw).toString('latin1') + '\n'
   }
-  const toks = text.split(/\s+/)
-  let m = [1, 0, 0, 1, 0, 0]
-  const mul = (a: number[], b: number[]): number[] => [
+  const tokens = text.split(/\s+/)
+  let matrix = [1, 0, 0, 1, 0, 0]
+  const multiply = (a: number[], b: number[]): number[] => [
     a[0] * b[0] + a[2] * b[1],
     a[1] * b[0] + a[3] * b[1],
     a[0] * b[2] + a[2] * b[3],
@@ -36,12 +34,15 @@ async function firstOverlayDevicePoint(
     a[0] * b[4] + a[2] * b[5] + a[4],
     a[1] * b[4] + a[3] * b[5] + a[5]
   ]
-  for (let i = 0; i < toks.length; i += 1) {
-    if (toks[i] === 'cm') m = mul(m, toks.slice(i - 6, i).map(Number))
-    if (toks[i] === 'm') {
-      const x = Number(toks[i - 2])
-      const y = Number(toks[i - 1])
-      return { x: m[0] * x + m[2] * y + m[4], y: m[1] * x + m[3] * y + m[5] }
+  for (let i = 0; i < tokens.length; i += 1) {
+    if (tokens[i] === 'cm') matrix = multiply(matrix, tokens.slice(i - 6, i).map(Number))
+    if (tokens[i] === 'm') {
+      const x = Number(tokens[i - 2])
+      const y = Number(tokens[i - 1])
+      return {
+        x: matrix[0] * x + matrix[2] * y + matrix[4],
+        y: matrix[1] * x + matrix[3] * y + matrix[5]
+      }
     }
   }
   return null
@@ -52,6 +53,58 @@ const onePixelPng = new Uint8Array([
   0, 31, 21, 196, 137, 0, 0, 0, 13, 73, 68, 65, 84, 120, 156, 99, 248, 15, 4, 0, 9, 251, 3, 253,
   167, 121, 129, 252, 0, 0, 0, 0, 73, 69, 78, 68, 174, 66, 96, 130
 ])
+const onePixelBase64 = Buffer.from(onePixelPng).toString('base64')
+
+// The detail header renders through a canvas; the vitest 'node' env has no DOM,
+// so stub `document` like legendImage.spec does. toBlob yields a REAL 1x1 PNG so
+// pdf-lib's embedPng accepts the header bytes.
+function stubHeaderCanvas(): void {
+  const ctx = {
+    scale: vi.fn(),
+    fillRect: vi.fn(),
+    strokeRect: vi.fn(),
+    fillText: vi.fn(),
+    measureText: vi.fn((text: string) => ({ width: text.length * 8 })),
+    set fillStyle(_v: string) {},
+    set strokeStyle(_v: string) {},
+    set font(_v: string) {},
+    set textAlign(_v: string) {},
+    set textBaseline(_v: string) {},
+    set lineWidth(_v: number) {}
+  }
+  const canvas = {
+    width: 0,
+    height: 0,
+    getContext: vi.fn(() => ctx),
+    toBlob: vi.fn((cb: BlobCallback) => cb(new Blob([onePixelPng], { type: 'image/png' })))
+  }
+  vi.stubGlobal('document', { createElement: vi.fn(() => canvas) })
+}
+
+const wideFacility: Area = {
+  id: 'wide',
+  pageIndex: 0,
+  kind: 'facility',
+  name: 'エスパル仙台本館',
+  polygon: [
+    { x: 10, y: 10 },
+    { x: 310, y: 10 },
+    { x: 310, y: 110 },
+    { x: 10, y: 110 }
+  ]
+}
+const tallFacility: Area = {
+  id: 'tall',
+  pageIndex: 0,
+  kind: 'facility',
+  name: 'AER',
+  polygon: [
+    { x: 10, y: 10 },
+    { x: 110, y: 10 },
+    { x: 110, y: 310 },
+    { x: 10, y: 310 }
+  ]
+}
 
 describe('buildReportPdf', () => {
   it('appends an A4 portrait report page without replacing source pages', async () => {
@@ -151,17 +204,16 @@ describe('buildReportPdf', () => {
 
 describe('buildReportPdf page order', () => {
   async function threePagePdf(): Promise<Uint8Array> {
-    const d = await PDFDocument.create()
-    d.addPage([200, 200])
-    d.addPage([200, 200])
-    d.addPage([200, 200])
-    return d.save()
+    const doc = await PDFDocument.create()
+    doc.addPage([200, 200])
+    doc.addPage([200, 200])
+    doc.addPage([200, 200])
+    return doc.save()
   }
 
   it('keeps only the pages in pageOrder, in that order, plus the summary page', async () => {
-    const src = await threePagePdf()
     const out = await buildReportPdf(
-      src,
+      await threePagePdf(),
       onePixelPng,
       [],
       {},
@@ -170,14 +222,204 @@ describe('buildReportPdf page order', () => {
       [2, 0]
     )
     const doc = await PDFDocument.load(out)
-    // two kept pages + one appended summary page
     expect(doc.getPageCount()).toBe(3)
   })
 
   it('defaults to all pages when pageOrder is omitted', async () => {
-    const src = await threePagePdf()
-    const out = await buildReportPdf(src, onePixelPng)
+    const out = await buildReportPdf(await threePagePdf(), onePixelPng)
     const doc = await PDFDocument.load(out)
-    expect(doc.getPageCount()).toBe(4) // 3 original + summary
+    expect(doc.getPageCount()).toBe(4)
+  })
+})
+
+describe('buildReportPdf detail pages', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('inserts detail pages between the originals and the summary, preserving input order', async () => {
+    stubHeaderCanvas()
+    const source = await PDFDocument.create()
+    source.addPage([400, 400])
+    const detail = {
+      pages: [
+        { name: 'エスパル仙台本館', pageIndex: 0 },
+        { name: 'AER', pageIndex: 0 }
+      ] as DetailPage[],
+      areas: [wideFacility, tallFacility],
+      pageLabels: ['1F']
+    }
+
+    const out = await buildReportPdf(
+      await source.save(),
+      onePixelPng,
+      [],
+      {},
+      undefined,
+      undefined,
+      [],
+      detail
+    )
+    const pages = (await PDFDocument.load(out)).getPages()
+
+    // 1 original + 2 detail + 1 summary table.
+    expect(pages).toHaveLength(4)
+    // Order preserved: wide facility (landscape) then tall facility (portrait).
+    expect(pages[1].getWidth()).toBeCloseTo(841.89)
+    expect(pages[1].getHeight()).toBeCloseTo(595.28)
+    expect(pages[2].getWidth()).toBeCloseTo(595.28)
+    expect(pages[2].getHeight()).toBeCloseTo(841.89)
+    // Summary table stays last, A4 portrait.
+    expect(pages[3].getWidth()).toBeCloseTo(595.28)
+    expect(pages[3].getHeight()).toBeCloseTo(841.89)
+  })
+
+  it('orients a detail page landscape when its facility bbox is wider than tall', async () => {
+    stubHeaderCanvas()
+    const source = await PDFDocument.create()
+    source.addPage([400, 400])
+    const detail = {
+      pages: [{ name: 'エスパル仙台本館', pageIndex: 0 }] as DetailPage[],
+      areas: [wideFacility],
+      pageLabels: ['1F']
+    }
+
+    const pages = (
+      await PDFDocument.load(
+        await buildReportPdf(
+          await source.save(),
+          onePixelPng,
+          [],
+          {},
+          undefined,
+          undefined,
+          [],
+          detail
+        )
+      )
+    ).getPages()
+
+    expect(pages[1].getWidth()).toBeGreaterThan(pages[1].getHeight())
+  })
+
+  it('skips detail entries whose facility has no polygons on the page', async () => {
+    stubHeaderCanvas()
+    const source = await PDFDocument.create()
+    source.addPage([400, 400])
+    const detail = {
+      pages: [{ name: '存在しない施設', pageIndex: 0 }] as DetailPage[],
+      areas: [wideFacility],
+      pageLabels: ['1F']
+    }
+
+    const pages = (
+      await PDFDocument.load(
+        await buildReportPdf(
+          await source.save(),
+          onePixelPng,
+          [],
+          {},
+          undefined,
+          undefined,
+          [],
+          detail
+        )
+      )
+    ).getPages()
+
+    // No detail page added: 1 original + 1 summary.
+    expect(pages).toHaveLength(2)
+  })
+
+  it('renders a vector-only detail page when the entry has no image', async () => {
+    stubHeaderCanvas()
+    const source = await PDFDocument.create()
+    source.addPage([400, 400])
+    const detail = {
+      pages: [{ name: 'エスパル仙台本館', pageIndex: 0 }] as DetailPage[],
+      areas: [wideFacility],
+      pageLabels: ['1F']
+    }
+
+    const pages = (
+      await PDFDocument.load(
+        await buildReportPdf(
+          await source.save(),
+          onePixelPng,
+          [],
+          {},
+          undefined,
+          undefined,
+          [],
+          detail
+        )
+      )
+    ).getPages()
+
+    // 1 original + 1 detail (no image) + 1 summary.
+    expect(pages).toHaveLength(3)
+  })
+
+  it('embeds the background image when the entry has one', async () => {
+    stubHeaderCanvas()
+    const source = await PDFDocument.create()
+    source.addPage([400, 400])
+    const originalBytes = await source.save()
+    const base = {
+      pages: [{ name: 'エスパル仙台本館', pageIndex: 0 }] as DetailPage[],
+      areas: [wideFacility],
+      pageLabels: ['1F']
+    }
+    const withImage = {
+      ...base,
+      pages: [
+        {
+          name: 'エスパル仙台本館',
+          pageIndex: 0,
+          image: onePixelBase64,
+          transform: { x: 20, y: 100, scale: 2, rotation: 15 }
+        }
+      ] as DetailPage[]
+    }
+
+    const noImg = await buildReportPdf(
+      originalBytes,
+      onePixelPng,
+      [],
+      {},
+      undefined,
+      undefined,
+      [],
+      base
+    )
+    stubHeaderCanvas()
+    const img = await buildReportPdf(
+      originalBytes,
+      onePixelPng,
+      [],
+      {},
+      undefined,
+      undefined,
+      [],
+      withImage
+    )
+
+    // The embedded background adds content the vector-only page lacks.
+    expect(img.length).toBeGreaterThan(noImg.length)
+  })
+
+  it('centers the padded facility bbox in the content area (detailFit contract)', () => {
+    const bbox = { x: 100, y: 200, w: 300, h: 100 }
+    const avail = { width: 500, height: 400 }
+    const fit = detailFit(bbox, avail)
+    const padX = bbox.w * 0.05
+    const padY = bbox.h * 0.05
+    // The mapping the export applies (avail-local, before the content-area shift):
+    const map = (p: { x: number; y: number }): { x: number; y: number } => ({
+      x: (p.x - (bbox.x - padX)) * fit.scale + fit.offsetX,
+      y: (p.y - (bbox.y - padY)) * fit.scale + fit.offsetY
+    })
+    const center = { x: bbox.x + bbox.w / 2, y: bbox.y + bbox.h / 2 }
+    const mapped = map(center)
+    expect(mapped.x).toBeCloseTo(avail.width / 2)
+    expect(mapped.y).toBeCloseTo(avail.height / 2)
   })
 })
