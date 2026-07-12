@@ -1509,21 +1509,30 @@ line 555):
 `detailFrame` (Step 3) must actually drive the camera. The store's `zoom` scales the fixed
 1.5-scale viewport and `pan` is the scroll offset (an existing effect copies `pan` to
 `scrollRef`), so framing = one `setZoom` + one `setPan`. Add this effect after the Esc effect
-(Step 8). It is idempotent per detail-editing session via a key ref, so the exhaustive
-dependency list is safe (camera changes re-run it but hit the key guard); the pre-entry camera
-is saved once and restored when `detailEditing` clears:
+(Step 8). Entering detail mode usually also switches `activePageIndex`, and the page-render
+effect delivers the new page's `viewport` asynchronously — so the effect may first run with the
+PREVIOUS page's stale viewport. The guard ref therefore stores the viewport it framed with and
+reframes whenever the viewport reference changes (a transient wrong-page frame is corrected the
+moment the real viewport lands); the pre-entry camera is saved once per session and restored
+when `detailEditing` clears. The exhaustive dependency list is safe: camera changes re-run the
+effect but hit the key+viewport guard:
 
 ```ts
-  const detailCamera = useRef<{ key: string; prev: { zoom: number; pan: Pt } } | null>(null)
+  const detailCamera = useRef<{
+    key: string
+    viewport: PageViewport
+    prev: { zoom: number; pan: Pt }
+  } | null>(null)
 
   useEffect(() => {
     const scroll = scrollRef.current
     if (detailEditing && viewport && scroll) {
       const key = `${detailEditing.name}\u0000${detailEditing.pageIndex}`
-      if (detailCamera.current?.key === key) return
+      const prior = detailCamera.current
+      if (prior?.key === key && prior.viewport === viewport) return
       const bbox = facilityDetailBBox(areas, detailEditing.name, detailEditing.pageIndex)
       if (!bbox) return
-      detailCamera.current = { key, prev: detailCamera.current?.prev ?? { zoom, pan } }
+      detailCamera.current = { key, viewport, prev: prior?.prev ?? { zoom, pan } }
       // PDF points are bottom-left origin, viewport px are y-down: the rect's viewport
       // top-left is the PDF point (x, y + h), its bottom-right is (x + w, y).
       const tl = viewportPt(viewport, { x: bbox.x, y: bbox.y + bbox.h })
