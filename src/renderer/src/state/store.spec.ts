@@ -13,7 +13,7 @@ import {
   selectIsDirty,
   toProjectFile
 } from './store'
-import type { Area, PageState } from './types'
+import type { Area, DetailPage, PageState } from './types'
 
 const pages: PageState[] = [
   { pageIndex: 0, label: 'Page 1', scale: { kind: 'custom', mmPerPt: 10 } },
@@ -632,7 +632,7 @@ describe('area store', () => {
     })
 
     expect(toProjectFile(store.getState())).toEqual({
-      version: 2,
+      version: 3,
       fileName: 'plan.pdf',
       pdfPath: 'C:/docs/plan.pdf',
       pages,
@@ -644,7 +644,8 @@ describe('area store', () => {
       legendVisible: false,
       legendScale: 1.5,
       legendOrientation: 'horizontal',
-      storeLabelMode: 'number'
+      storeLabelMode: 'number',
+      detailPages: []
     })
   })
 
@@ -953,5 +954,59 @@ describe('report ordering', () => {
       '2F',
       '1F'
     ])
+  })
+})
+
+describe('detail pages persistence', () => {
+  const detail: DetailPage = {
+    name: 'A',
+    pageIndex: 0,
+    image: 'BASE64PNG',
+    transform: { x: 12, y: 34, scale: 2, rotation: 15 }
+  }
+
+  it('serializes detailPages and version 3 in toProjectFile', () => {
+    const store = createAreaStore({ detailPages: [detail] })
+    const file = toProjectFile(store.getState())
+    expect(file.version).toBe(3)
+    expect(file.detailPages).toEqual([detail])
+  })
+
+  it('does not persist the transient detailEditing field', () => {
+    const store = createAreaStore({ detailEditing: { name: 'A', pageIndex: 0 } })
+    expect('detailEditing' in toProjectFile(store.getState())).toBe(false)
+  })
+
+  it('migrates a v2 project (no detailPages) to an empty array on import', () => {
+    const store = createAreaStore({})
+    store.getState().importProject({ pages, names: ['A'], areas: [] })
+    expect(store.getState().detailPages).toEqual([])
+  })
+
+  it('imports detailPages verbatim and closes any open editor', () => {
+    const store = createAreaStore({ detailEditing: { name: 'A', pageIndex: 0 } })
+    store.getState().importProject({ pages, names: ['A'], areas: [], detailPages: [detail] })
+    expect(store.getState().detailPages).toEqual([detail])
+    expect(store.getState().detailEditing).toBeNull()
+  })
+
+  it('restores detailPages from an undo snapshot', () => {
+    const snapshot = JSON.stringify(
+      toProjectFile(createAreaStore({ detailPages: [detail] }).getState())
+    )
+    const store = createAreaStore({ detailPages: [], undoStack: [snapshot] })
+    store.getState().undo()
+    expect(store.getState().detailPages).toEqual([detail])
+  })
+
+  it('resets detailPages and detailEditing when a document is loaded', () => {
+    const store = createAreaStore({
+      detailPages: [detail],
+      detailEditing: { name: 'A', pageIndex: 0 }
+    })
+    // loadDocument is async and needs a PDF; assert the reset fields are wired via importProject reset instead.
+    store.getState().importProject({ pages, names: [], areas: [] })
+    expect(store.getState().detailPages).toEqual([])
+    expect(store.getState().detailEditing).toBeNull()
   })
 })

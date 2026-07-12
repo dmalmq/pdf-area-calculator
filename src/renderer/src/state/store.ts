@@ -10,6 +10,7 @@ import type {
   Area,
   AreaKind,
   CopiedArea,
+  DetailPage,
   FacilityLevelRow,
   FacilityRow,
   LegendEntry,
@@ -58,6 +59,7 @@ export interface AreaStore extends AppState {
     legendScale?: number
     legendOrientation?: LegendOrientation
     storeLabelMode?: StoreLabelMode
+    detailPages?: DetailPage[]
     fileName?: string | null
     pdfPath?: string | null
   }): void
@@ -111,6 +113,8 @@ const initialState: AppState = {
   legendScale: 1,
   legendOrientation: 'vertical',
   storeLabelMode: 'code',
+  detailPages: [],
+  detailEditing: null,
   savedFingerprint: null,
   undoStack: [],
   redoStack: []
@@ -164,7 +168,7 @@ export function colorForBusiness(state: Pick<AppState, 'colors'>, name: string):
 
 export function toProjectFile(state: AppState): ProjectFile {
   return {
-    version: 2,
+    version: 3,
     fileName: state.fileName,
     pdfPath: state.pdfPath,
     pages: state.pages,
@@ -176,7 +180,8 @@ export function toProjectFile(state: AppState): ProjectFile {
     legendVisible: state.legendVisible,
     legendScale: state.legendScale,
     legendOrientation: state.legendOrientation,
-    storeLabelMode: state.storeLabelMode
+    storeLabelMode: state.storeLabelMode,
+    detailPages: state.detailPages
   }
 }
 
@@ -469,7 +474,8 @@ function restoreFields(json: string): Partial<AppState> {
     legendVisible: p.legendVisible ?? true,
     legendScale: clampLegendScale(p.legendScale),
     legendOrientation: p.legendOrientation ?? 'vertical',
-    storeLabelMode: p.storeLabelMode ?? 'code'
+    storeLabelMode: p.storeLabelMode ?? 'code',
+    detailPages: p.detailPages ?? []
   }
 }
 
@@ -510,6 +516,8 @@ export function createAreaStore(initial?: Partial<AppState>): StoreApi<AreaStore
         originalBytes,
         pages,
         areas: [],
+        detailPages: [],
+        detailEditing: null,
         names: [],
         colors: {},
         activeName: null,
@@ -735,6 +743,8 @@ export function createAreaStore(initial?: Partial<AppState>): StoreApi<AreaStore
         legendScale: clampLegendScale(project.legendScale),
         legendOrientation: project.legendOrientation ?? 'vertical',
         storeLabelMode: project.storeLabelMode ?? 'code',
+        detailPages: (project.detailPages ?? []).map((dp) => ({ ...dp })),
+        detailEditing: null,
         activeName: project.names[0] ?? null,
         selectedAreaId: null,
         activePageIndex: 0,

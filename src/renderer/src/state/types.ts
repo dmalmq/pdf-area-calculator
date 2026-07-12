@@ -79,8 +79,22 @@ export interface CopiedArea {
   holes?: Pt[][]
 }
 
+export interface DetailTransform {
+  x: number // image top-left offset in source-page PDF points
+  y: number
+  scale: number // PDF points per image pixel (uniform)
+  rotation: number // degrees, around the image center
+}
+
+export interface DetailPage {
+  name: string // facility name
+  pageIndex: number // source page (level)
+  image?: string // PNG, raw base64 (no data: prefix)
+  transform?: DetailTransform // absent until an image is placed
+}
+
 export interface ProjectFile {
-  version: 1 | 2
+  version: 1 | 2 | 3
   fileName: string | null
   pdfPath?: string | null
   pages: PageState[]
@@ -93,6 +107,7 @@ export interface ProjectFile {
   legendScale?: number
   legendOrientation?: LegendOrientation
   storeLabelMode?: StoreLabelMode
+  detailPages?: DetailPage[]
 }
 
 export interface PdfOpenResult {
@@ -124,6 +139,8 @@ export interface AppState {
   legendScale: number
   legendOrientation: LegendOrientation
   storeLabelMode: StoreLabelMode
+  detailPages: DetailPage[]
+  detailEditing: { name: string; pageIndex: number } | null
   savedFingerprint: string | null
   undoStack: string[]
   redoStack: string[]
