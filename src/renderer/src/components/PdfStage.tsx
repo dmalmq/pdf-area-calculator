@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { PageViewport } from 'pdfjs-dist'
 
 import { pointInArea, shoelacePt2 } from '../geometry/area'
+import { facilityDetailBBox } from '../geometry/detailFit'
 import {
   areaM2,
   areaStore,
@@ -94,6 +95,10 @@ const LEGEND = LEGEND_LAYOUT
 
 const TAG = { font: 13, weight: 600, lineH: 15, padX: 10, padY: 8 }
 
+// `.pdf-stage` margin in main.css; the wrapper's content origin is offset by this
+// inside the scroll container, so framing math must add it back.
+const STAGE_MARGIN = 32
+
 // Tag box (screen px) sized to its text: widest line + horizontal padding both
 // sides; one line-height per line + vertical padding. Auto-grows so long names fit.
 export function tagBoxSize(lineWidths: number[]): { width: number; height: number } {
@@ -185,6 +190,28 @@ export function anchoredZoomScroll(input: AnchoredZoomInput): Pt {
   }
 }
 
+// Frame a viewport-px rectangle to fill the scroll container: uniform fit + centering,
+// expressed as the store's zoom/pan (scroll offset). Clamped to the stage zoom range.
+export function detailFrame(input: {
+  rectX: number
+  rectY: number
+  rectW: number
+  rectH: number
+  containerW: number
+  containerH: number
+  margin: number
+}): { zoom: number; pan: Pt } {
+  const fit = Math.min(input.containerW / input.rectW, input.containerH / input.rectH)
+  const zoom = Math.min(Math.max(fit, 0.2), 8)
+  return {
+    zoom,
+    pan: {
+      x: input.margin + input.rectX * zoom - (input.containerW - input.rectW * zoom) / 2,
+      y: input.margin + input.rectY * zoom - (input.containerH - input.rectH * zoom) / 2
+    }
+  }
+}
+
 export function constrainDelta(delta: Pt, lockAxis: boolean): Pt {
   if (!lockAxis) return delta
   return Math.abs(delta.x) >= Math.abs(delta.y) ? { x: delta.x, y: 0 } : { x: 0, y: delta.y }
@@ -235,6 +262,10 @@ export function PdfStage({
   const addHole = useAreaStore((s) => s.addHole)
   const beginInteraction = useAreaStore((s) => s.beginInteraction)
   const endInteraction = useAreaStore((s) => s.endInteraction)
+  const detailEditing = useAreaStore((s) => s.detailEditing)
+  const detailPages = useAreaStore((s) => s.detailPages)
+  const removeDetailImage = useAreaStore((s) => s.removeDetailImage)
+  const closeDetailEditor = useAreaStore((s) => s.closeDetailEditor)
   const [viewport, setViewport] = useState<PageViewport | null>(null)
   const [draft, setDraft] = useState<Pt[]>([])
   const [hoverPt, setHoverPt] = useState<Pt | null>(null)
@@ -242,6 +273,8 @@ export function PdfStage({
     null
   )
   const [drag, setDrag] = useState<DragState | null>(null)
+  const imageCache = useRef<Map<string, HTMLImageElement>>(new Map())
+  const [imageEpoch, setImageEpoch] = useState(0)
   const page = pages[activePageIndex]
   const sourceIndex = page ? page.pageIndex : 0
   const pageAreas = useMemo(
@@ -249,6 +282,28 @@ export function PdfStage({
     [sourceIndex, areas]
   )
   const selectedArea = areas.find((area) => area.id === selectedAreaId) ?? null
+
+  const currentDetail =
+    detailPages.find(
+      (dp) =>
+        detailEditing != null &&
+        dp.name === detailEditing.name &&
+        dp.pageIndex === detailEditing.pageIndex
+    ) ?? null
+
+  // HTMLImageElement decoded from raw base64, cached by the base64 string. Returns the
+  // element once decoded (so the draw path can size it); a fresh element triggers one
+  // redraw via imageEpoch when it finishes loading.
+  const getDetailImage = useCallback((base64: string): HTMLImageElement | null => {
+    const cache = imageCache.current
+    const existing = cache.get(base64)
+    if (existing) return existing.complete && existing.naturalWidth > 0 ? existing : null
+    const img = new Image()
+    img.onload = () => setImageEpoch((n) => n + 1)
+    img.src = `data:image/png;base64,${base64}`
+    cache.set(base64, img)
+    return null
+  }, [])
 
   const closeDraft = useCallback(() => {
     if (draft.length < 3) return
@@ -394,6 +449,38 @@ export function PdfStage({
       }
     }
 
+    if (detailEditing) {
+      if (currentDetail?.image && currentDetail.transform) {
+        const img = getDetailImage(currentDetail.image)
+        if (img) {
+          const s = viewport.scale * currentDetail.transform.scale
+          const cx =
+            currentDetail.transform.x + (img.naturalWidth * currentDetail.transform.scale) / 2
+          const cy =
+            currentDetail.transform.y - (img.naturalHeight * currentDetail.transform.scale) / 2
+          const center = viewportPt(viewport, { x: cx, y: cy })
+          ctx.save()
+          ctx.globalAlpha = 0.9
+          ctx.translate(center.x, center.y)
+          ctx.rotate((currentDetail.transform.rotation * Math.PI) / 180)
+          ctx.drawImage(
+            img,
+            -(img.naturalWidth * s) / 2,
+            -(img.naturalHeight * s) / 2,
+            img.naturalWidth * s,
+            img.naturalHeight * s
+          )
+          ctx.restore()
+        }
+      }
+      areas
+        .filter(
+          (area) => area.pageIndex === detailEditing.pageIndex && area.name === detailEditing.name
+        )
+        .forEach((area) => drawPolygon(area, false))
+      return
+    }
+
     pageAreas.forEach((area) => drawPolygon(area, area.id === selectedAreaId))
 
     if (legendVisible) {
@@ -489,6 +576,11 @@ export function PdfStage({
     }
   }, [
     sourceIndex,
+    areas,
+    currentDetail,
+    detailEditing,
+    getDetailImage,
+    imageEpoch,
     calibrating,
     calibrationDraft,
     draft,
@@ -546,6 +638,56 @@ export function PdfStage({
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [closeDraft, draft.length, onToast, removeVertex, selectedVertex, tool])
+
+  useEffect(() => {
+    if (!detailEditing) return
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        closeDetailEditor()
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [closeDetailEditor, detailEditing])
+
+  const detailCamera = useRef<{
+    key: string
+    viewport: PageViewport
+    prev: { zoom: number; pan: Pt }
+  } | null>(null)
+
+  useEffect(() => {
+    const scroll = scrollRef.current
+    if (detailEditing && viewport && scroll) {
+      const key = `${detailEditing.name}\u0000${detailEditing.pageIndex}`
+      const prior = detailCamera.current
+      if (prior?.key === key && prior.viewport === viewport) return
+      const bbox = facilityDetailBBox(areas, detailEditing.name, detailEditing.pageIndex)
+      if (!bbox) return
+      detailCamera.current = { key, viewport, prev: prior?.prev ?? { zoom, pan } }
+      // PDF points are bottom-left origin, viewport px are y-down: the rect's viewport
+      // top-left is the PDF point (x, y + h), its bottom-right is (x + w, y).
+      const tl = viewportPt(viewport, { x: bbox.x, y: bbox.y + bbox.h })
+      const br = viewportPt(viewport, { x: bbox.x + bbox.w, y: bbox.y })
+      const framed = detailFrame({
+        rectX: tl.x,
+        rectY: tl.y,
+        rectW: br.x - tl.x,
+        rectH: br.y - tl.y,
+        containerW: scroll.clientWidth,
+        containerH: scroll.clientHeight,
+        margin: STAGE_MARGIN
+      })
+      setZoom(framed.zoom)
+      setPan(framed.pan)
+    } else if (!detailEditing && detailCamera.current) {
+      const { prev } = detailCamera.current
+      detailCamera.current = null
+      setZoom(prev.zoom)
+      setPan(prev.pan)
+    }
+  }, [areas, detailEditing, pan, setPan, setZoom, viewport, zoom])
 
   const findAreaAt = (pt: Pt): Area | null => {
     for (let i = pageAreas.length - 1; i >= 0; i -= 1) {
@@ -634,6 +776,9 @@ export function PdfStage({
 
     const pdfPt = eventToPdfPt(event.nativeEvent, canvas, viewport)
     const viewportPoint = eventToViewportPt(event.nativeEvent, canvas)
+    if (detailEditing) {
+      return
+    }
     if (holeTarget) {
       if (draft.length >= 3) {
         const first = viewportPt(viewport, draft[0])
@@ -917,13 +1062,17 @@ export function PdfStage({
         ) : (
           <div
             ref={wrapperRef}
-            className="pdf-stage"
+            className={detailEditing ? 'pdf-stage is-detail' : 'pdf-stage'}
             style={{
               width: (viewport?.width ?? 0) * zoom,
               height: (viewport?.height ?? 0) * zoom
             }}
           >
-            <canvas ref={pageCanvasRef} className="pdf-canvas" />
+            <canvas
+              ref={pageCanvasRef}
+              className="pdf-canvas"
+              style={{ display: detailEditing ? 'none' : 'block' }}
+            />
             <canvas
               ref={overlayRef}
               className="overlay-canvas"
@@ -968,6 +1117,24 @@ export function PdfStage({
             }}
           >
             {t('stage.zoomFit')}
+          </button>
+        </div>
+      ) : null}
+
+      {detailEditing ? (
+        <div className="detail-toolbar">
+          <span className="detail-toolbar__hint">{t('detail.hint')}</span>
+          {currentDetail?.image ? (
+            <button
+              type="button"
+              className="btn"
+              onClick={() => removeDetailImage(detailEditing.name, detailEditing.pageIndex)}
+            >
+              {t('detail.removeImage')}
+            </button>
+          ) : null}
+          <button type="button" className="btn btn--primary" onClick={closeDetailEditor}>
+            {t('detail.done')}
           </button>
         </div>
       ) : null}

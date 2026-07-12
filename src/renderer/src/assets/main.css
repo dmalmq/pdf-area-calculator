@@ -1043,3 +1043,28 @@ details.disclosure > summary {
   font-size: 12px;
   white-space: nowrap;
 }
+
+.pdf-stage.is-detail {
+  background: #ffffff;
+}
+
+.detail-toolbar {
+  position: absolute;
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: rgba(17, 24, 39, 0.92);
+  color: #ffffff;
+  border-radius: 10px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.28);
+  z-index: 5;
+}
+
+.detail-toolbar__hint {
+  font-size: 12px;
+  white-space: nowrap;
+}

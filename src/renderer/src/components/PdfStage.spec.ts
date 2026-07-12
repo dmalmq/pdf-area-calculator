@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   anchoredZoomScroll,
   constrainDelta,
+  detailFrame,
   doubleClickAction,
   shouldPanPointer,
   tagBoxSize
@@ -54,5 +55,38 @@ describe('tagBoxSize', () => {
 
   it('falls back to padding-only when there are no lines', () => {
     expect(tagBoxSize([])).toEqual({ width: 20, height: 16 })
+  })
+})
+
+describe('detailFrame', () => {
+  it('fits the bbox rect to the container and centers it (margin-aware)', () => {
+    // rect 100x100 viewport-px at (10,20); container 500x400; 32px stage margin.
+    // fit = min(500/100, 400/100) = 4.
+    // pan.x = 32 + 10*4 - (500 - 100*4)/2 = 72 - 50 = 22
+    // pan.y = 32 + 20*4 - (400 - 100*4)/2 = 112 - 0 = 112
+    expect(
+      detailFrame({
+        rectX: 10,
+        rectY: 20,
+        rectW: 100,
+        rectH: 100,
+        containerW: 500,
+        containerH: 400,
+        margin: 32
+      })
+    ).toEqual({ zoom: 4, pan: { x: 22, y: 112 } })
+  })
+
+  it('clamps the framing zoom to the stage zoom range', () => {
+    const framed = detailFrame({
+      rectX: 0,
+      rectY: 0,
+      rectW: 1,
+      rectH: 1,
+      containerW: 5000,
+      containerH: 5000,
+      margin: 0
+    })
+    expect(framed.zoom).toBe(8)
   })
 })
