@@ -3,6 +3,7 @@ import type { PageViewport } from 'pdfjs-dist'
 
 import { pointInArea, shoelacePt2 } from '../geometry/area'
 import { facilityDetailBBox } from '../geometry/detailFit'
+import { importImagePng } from '../utils/importImage'
 import {
   areaM2,
   areaStore,
@@ -13,7 +14,7 @@ import {
   useAreaStore
 } from '../state/store'
 import { storeTagLabel } from '../state/storeLabel'
-import type { AppState, Area, LegendOrientation, Pt, Tool } from '../state/types'
+import type { AppState, Area, DetailTransform, LegendOrientation, Pt, Tool } from '../state/types'
 import {
   clampLegendTopLeft,
   defaultLegendTopLeft,
@@ -22,7 +23,7 @@ import {
   type LegendGeometry,
   REPORT_FONT_FAMILY
 } from '../report/legendLayout'
-import { useT } from '../i18n'
+import { t as translateNow, useT } from '../i18n'
 
 interface PdfStageProps {
   calibrationDraft: Pt[]
@@ -35,7 +36,7 @@ interface PdfStageProps {
 }
 
 interface DragState {
-  kind: 'pan' | 'vertex' | 'area' | 'legend' | 'label'
+  kind: 'pan' | 'vertex' | 'area' | 'legend' | 'label' | 'detailImage'
   startClient: Pt
   startPan: Pt
   areaId?: string
@@ -45,6 +46,7 @@ interface DragState {
   startHoles?: Pt[][]
   startLegendPos?: Pt
   startLabelOffset?: Pt
+  startTransform?: DetailTransform
   moved: boolean
 }
 
@@ -58,7 +60,7 @@ interface AnchoredZoomInput {
 }
 
 export function eventToPdfPt(
-  e: PointerEvent,
+  e: MouseEvent,
   canvas: HTMLCanvasElement,
   viewport: PageViewport
 ): Pt {
@@ -212,6 +214,56 @@ export function detailFrame(input: {
   }
 }
 
+// Inverse-transform a viewport-px point into image-local pixels: subtract the image
+// center, un-rotate by the transform rotation, divide by the viewport-px-per-image-px
+// scale, then recenter to top-left origin. Mirror of the draw transform in the effect.
+export function inverseImagePoint(
+  pt: Pt,
+  center: Pt,
+  s: number,
+  rotationRad: number,
+  imgW: number,
+  imgH: number
+): Pt {
+  const dx = pt.x - center.x
+  const dy = pt.y - center.y
+  const cos = Math.cos(-rotationRad)
+  const sin = Math.sin(-rotationRad)
+  return {
+    x: (dx * cos - dy * sin) / s + imgW / 2,
+    y: (dx * sin + dy * cos) / s + imgH / 2
+  }
+}
+
+// True when an image-local point (px, top-left origin) lands on the image rectangle.
+export function pointInImageRect(local: Pt, imgW: number, imgH: number): boolean {
+  return local.x >= 0 && local.x <= imgW && local.y >= 0 && local.y <= imgH
+}
+
+// Scale the transform about a cursor PDF point, keeping the cursor's image-local point
+// fixed. Uniform scaling commutes with rotation, so the center simply moves toward/away
+// from the cursor by the scale ratio; new top-left is derived from the new center.
+export function scaleDetailAboutCursor(
+  t: DetailTransform,
+  imgW: number,
+  imgH: number,
+  cursor: Pt,
+  factor: number
+): DetailTransform {
+  const nextScale = t.scale * factor
+  const cx = t.x + (imgW * t.scale) / 2
+  const cy = t.y - (imgH * t.scale) / 2
+  const ratio = nextScale / t.scale
+  const ncx = cursor.x - (cursor.x - cx) * ratio
+  const ncy = cursor.y - (cursor.y - cy) * ratio
+  return {
+    x: ncx - (imgW * nextScale) / 2,
+    y: ncy + (imgH * nextScale) / 2,
+    scale: nextScale,
+    rotation: t.rotation
+  }
+}
+
 export function constrainDelta(delta: Pt, lockAxis: boolean): Pt {
   if (!lockAxis) return delta
   return Math.abs(delta.x) >= Math.abs(delta.y) ? { x: delta.x, y: 0 } : { x: 0, y: delta.y }
@@ -266,6 +318,8 @@ export function PdfStage({
   const detailPages = useAreaStore((s) => s.detailPages)
   const removeDetailImage = useAreaStore((s) => s.removeDetailImage)
   const closeDetailEditor = useAreaStore((s) => s.closeDetailEditor)
+  const setDetailImage = useAreaStore((s) => s.setDetailImage)
+  const setDetailTransform = useAreaStore((s) => s.setDetailTransform)
   const [viewport, setViewport] = useState<PageViewport | null>(null)
   const [draft, setDraft] = useState<Pt[]>([])
   const [hoverPt, setHoverPt] = useState<Pt | null>(null)
@@ -275,6 +329,8 @@ export function PdfStage({
   const [drag, setDrag] = useState<DragState | null>(null)
   const imageCache = useRef<Map<string, HTMLImageElement>>(new Map())
   const [imageEpoch, setImageEpoch] = useState(0)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const wheelBatch = useRef<number | null>(null)
   const page = pages[activePageIndex]
   const sourceIndex = page ? page.pageIndex : 0
   const pageAreas = useMemo(
@@ -304,6 +360,34 @@ export function PdfStage({
     cache.set(base64, img)
     return null
   }, [])
+
+  // Place a freshly imported image centered on the facility bbox, uniformly scaled to
+  // fit it, rotation 0. `importImagePng` downscales oversized inputs and returns raw
+  // base64 (no data: prefix) so the store snapshot stays sane.
+  const placeDetailImage = useCallback(
+    async (blob: Blob): Promise<void> => {
+      if (!detailEditing) return
+      const bbox = facilityDetailBBox(areas, detailEditing.name, detailEditing.pageIndex)
+      if (!bbox) return
+      const { dataBase64, width, height } = await importImagePng(blob)
+      const scale = Math.min(bbox.w / width, bbox.h / height)
+      const cx = bbox.x + bbox.w / 2
+      const cy = bbox.y + bbox.h / 2
+      setDetailImage(detailEditing.name, detailEditing.pageIndex, dataBase64, {
+        x: cx - (width * scale) / 2,
+        y: cy + (height * scale) / 2,
+        scale,
+        rotation: 0
+      })
+    },
+    [areas, detailEditing, setDetailImage]
+  )
+
+  const onFileChosen = (event: React.ChangeEvent<HTMLInputElement>): void => {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (file) void placeDetailImage(file)
+  }
 
   const closeDraft = useCallback(() => {
     if (draft.length < 3) return
@@ -653,6 +737,25 @@ export function PdfStage({
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [closeDetailEditor, detailEditing])
 
+  useEffect(() => {
+    if (!detailEditing) return
+    const onPaste = (event: ClipboardEvent): void => {
+      const items = event.clipboardData?.items
+      const imageItem = items
+        ? Array.from(items).find((item) => item.type.startsWith('image/'))
+        : undefined
+      const blob = imageItem?.getAsFile()
+      if (!blob) {
+        onToast(translateNow('toast.detail.notImage'))
+        return
+      }
+      event.preventDefault()
+      void placeDetailImage(blob)
+    }
+    window.addEventListener('paste', onPaste)
+    return () => window.removeEventListener('paste', onPaste)
+  }, [detailEditing, onToast, placeDetailImage])
+
   const detailCamera = useRef<{
     key: string
     viewport: PageViewport
@@ -786,6 +889,37 @@ export function PdfStage({
     const pdfPt = eventToPdfPt(event.nativeEvent, canvas, viewport)
     const viewportPoint = eventToViewportPt(event.nativeEvent, canvas)
     if (detailEditing) {
+      if (currentDetail?.image && currentDetail.transform) {
+        const img = getDetailImage(currentDetail.image)
+        if (img) {
+          const s = viewport.scale * currentDetail.transform.scale
+          const cx =
+            currentDetail.transform.x + (img.naturalWidth * currentDetail.transform.scale) / 2
+          const cy =
+            currentDetail.transform.y - (img.naturalHeight * currentDetail.transform.scale) / 2
+          const center = viewportPt(viewport, { x: cx, y: cy })
+          const local = inverseImagePoint(
+            viewportPoint,
+            center,
+            s,
+            (currentDetail.transform.rotation * Math.PI) / 180,
+            img.naturalWidth,
+            img.naturalHeight
+          )
+          if (pointInImageRect(local, img.naturalWidth, img.naturalHeight)) {
+            beginInteraction()
+            setDrag({
+              kind: 'detailImage',
+              startClient: { x: event.clientX, y: event.clientY },
+              startPan: pan,
+              startPt: pdfPt,
+              startTransform: currentDetail.transform,
+              moved: false
+            })
+            return
+          }
+        }
+      }
       return
     }
     if (holeTarget) {
@@ -976,6 +1110,17 @@ export function PdfStage({
       }
       setDrag({ ...drag, moved })
     }
+
+    if (drag.kind === 'detailImage' && drag.startPt && drag.startTransform && detailEditing) {
+      if (moved) {
+        setDetailTransform(detailEditing.name, detailEditing.pageIndex, {
+          ...drag.startTransform,
+          x: drag.startTransform.x + (pdfPt.x - drag.startPt.x),
+          y: drag.startTransform.y + (pdfPt.y - drag.startPt.y)
+        })
+      }
+      setDrag({ ...drag, moved })
+    }
   }
 
   const onPointerUp = (event: React.PointerEvent<HTMLCanvasElement>): void => {
@@ -1012,7 +1157,43 @@ export function PdfStage({
   const onWheel = (event: React.WheelEvent<HTMLCanvasElement>): void => {
     const scroll = scrollRef.current
     if (!scroll) return
-    if (detailEditing) return
+    if (detailEditing) {
+      event.preventDefault()
+      if (!currentDetail?.transform || !viewport || !overlayRef.current) return
+      const beginBatch = (): void => {
+        if (wheelBatch.current == null) beginInteraction()
+        else window.clearTimeout(wheelBatch.current)
+        wheelBatch.current = window.setTimeout(() => {
+          endInteraction()
+          wheelBatch.current = null
+        }, 400)
+      }
+      if (event.shiftKey) {
+        beginBatch()
+        setDetailTransform(detailEditing.name, detailEditing.pageIndex, {
+          ...currentDetail.transform,
+          rotation: currentDetail.transform.rotation + (event.deltaY < 0 ? 0.5 : -0.5)
+        })
+        return
+      }
+      const img = currentDetail.image ? getDetailImage(currentDetail.image) : null
+      if (!img) return
+      beginBatch()
+      const cursor = eventToPdfPt(event.nativeEvent, overlayRef.current, viewport)
+      const factor = event.deltaY < 0 ? 1.1 : 1 / 1.1
+      setDetailTransform(
+        detailEditing.name,
+        detailEditing.pageIndex,
+        scaleDetailAboutCursor(
+          currentDetail.transform,
+          img.naturalWidth,
+          img.naturalHeight,
+          cursor,
+          factor
+        )
+      )
+      return
+    }
     event.preventDefault()
     const rect = scroll.getBoundingClientRect()
     const current = { x: event.clientX - rect.left, y: event.clientY - rect.top }
@@ -1135,6 +1316,16 @@ export function PdfStage({
       {detailEditing ? (
         <div className="detail-toolbar">
           <span className="detail-toolbar__hint">{t('detail.hint')}</span>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/png,image/jpeg"
+            style={{ display: 'none' }}
+            onChange={onFileChosen}
+          />
+          <button type="button" className="btn" onClick={() => fileInputRef.current?.click()}>
+            {t('detail.addImage')}
+          </button>
           {currentDetail?.image ? (
             <button
               type="button"

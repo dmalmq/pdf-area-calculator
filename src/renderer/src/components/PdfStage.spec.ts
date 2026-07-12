@@ -1,3 +1,5 @@
+import { inverseImagePoint, pointInImageRect, scaleDetailAboutCursor } from './PdfStage'
+
 import { describe, expect, it } from 'vitest'
 
 import {
@@ -88,5 +90,54 @@ describe('detailFrame', () => {
       margin: 0
     })
     expect(framed.zoom).toBe(8)
+  })
+})
+
+describe('inverseImagePoint', () => {
+  it('inverse-maps a viewport point to image-local pixels (no rotation)', () => {
+    // center at (100,100) viewport-px, 2 viewport-px per image-px, 10x10 image.
+    expect(inverseImagePoint({ x: 100, y: 100 }, { x: 100, y: 100 }, 2, 0, 10, 10)).toEqual({
+      x: 5,
+      y: 5
+    })
+    expect(inverseImagePoint({ x: 102, y: 100 }, { x: 100, y: 100 }, 2, 0, 10, 10)).toEqual({
+      x: 6,
+      y: 5
+    })
+  })
+
+  it('un-rotates by the transform rotation before scaling into image space', () => {
+    // rotated 90°: a point 2px below center maps back onto the +x image axis.
+    const r = inverseImagePoint({ x: 100, y: 102 }, { x: 100, y: 100 }, 2, Math.PI / 2, 10, 10)
+    expect(r.x).toBeCloseTo(6)
+    expect(r.y).toBeCloseTo(5)
+  })
+})
+
+describe('pointInImageRect', () => {
+  it('accepts points inside the image rect and rejects points outside', () => {
+    expect(pointInImageRect({ x: 5, y: 5 }, 10, 10)).toBe(true)
+    expect(pointInImageRect({ x: 0, y: 10 }, 10, 10)).toBe(true)
+    expect(pointInImageRect({ x: -1, y: 5 }, 10, 10)).toBe(false)
+    expect(pointInImageRect({ x: 11, y: 5 }, 10, 10)).toBe(false)
+  })
+})
+
+describe('scaleDetailAboutCursor', () => {
+  it('keeps the cursor-anchored image point fixed while scaling', () => {
+    // cursor at the image top-left corner (PDF 0,0) → scaling leaves top-left in place.
+    expect(
+      scaleDetailAboutCursor({ x: 0, y: 0, scale: 1, rotation: 0 }, 10, 10, { x: 0, y: 0 }, 2)
+    ).toEqual({ x: 0, y: 0, scale: 2, rotation: 0 })
+  })
+
+  it('moves the top-left so the cursor stays anchored when it is off-corner', () => {
+    // image top-left (0,0), scale 1, 10x10 → center PDF (5,-5). Cursor at center, factor 2.
+    // center is fixed, so new top-left = (5 - 10*2/2, -5 + 10*2/2) = (-5, 5).
+    const r = scaleDetailAboutCursor({ x: 0, y: 0, scale: 1, rotation: 0 }, 10, 10, { x: 5, y: -5 }, 2)
+    expect(r.x).toBeCloseTo(-5)
+    expect(r.y).toBeCloseTo(5)
+    expect(r.scale).toBeCloseTo(2)
+    expect(r.rotation).toBe(0)
   })
 })
