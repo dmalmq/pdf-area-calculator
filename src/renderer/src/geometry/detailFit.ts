@@ -32,22 +32,21 @@ export function facilityDetailBBox(areas: Area[], name: string, pageIndex: numbe
 // Pad the bbox 5% per side, fit it uniformly into `avail`, and center it.
 // Offsets are avail-local (origin bottom-left, y up). A point maps as
 // tx = (p.x - (bbox.x - 0.05*bbox.w)) * scale + offsetX (y likewise).
-// Results are snapped to 1e-9 to shed IEEE-754 noise (e.g. 100*1.1), so that
-// exact-fit cases land on clean integers; this is ~500x tighter than the
-// 6-decimal tolerance callers rely on, so it never distorts real geometry.
-const snap = (n: number): number => {
-  const r = Math.round(n * 1e9) / 1e9
-  return r === 0 ? 0 : r // collapse -0 → 0 (Object.is distinguishes them)
-}
-
+// Raw IEEE-754 arithmetic; callers rely on a 6-decimal tolerance.
 export function detailFit(
   bbox: BBox,
   avail: { width: number; height: number }
 ): { scale: number; offsetX: number; offsetY: number } {
   const paddedW = bbox.w * 1.1
   const paddedH = bbox.h * 1.1
-  const scale = snap(Math.min(avail.width / paddedW, avail.height / paddedH))
-  const offsetX = snap((avail.width - paddedW * scale) / 2)
-  const offsetY = snap((avail.height - paddedH * scale) / 2)
+  // A zero padded dimension has no scale of its own; fit on the other, or
+  // fall back to 1 when the bbox is a point, so the result stays finite and
+  // the content lands at the center of `avail`.
+  const scaleX = paddedW > 0 ? avail.width / paddedW : Infinity
+  const scaleY = paddedH > 0 ? avail.height / paddedH : Infinity
+  let scale = Math.min(scaleX, scaleY)
+  if (!Number.isFinite(scale)) scale = 1
+  const offsetX = (avail.width - paddedW * scale) / 2
+  const offsetY = (avail.height - paddedH * scale) / 2
   return { scale, offsetX, offsetY }
 }

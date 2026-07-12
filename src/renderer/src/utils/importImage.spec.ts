@@ -50,4 +50,21 @@ describe('importImagePng', () => {
     expect(out.dataBase64.length).toBeGreaterThan(0)
     expect(out.dataBase64.startsWith('data:')).toBe(false)
   })
+
+  it('never exceeds the cap for a fractional maxDim', async () => {
+    setupCanvas(4000, 4000)
+    const out = await importImagePng(new Blob(), 2000.6)
+    expect(out.width).toBe(2000)
+    expect(out.height).toBe(2000)
+  })
+
+  it('throws for a maxDim below 1', async () => {
+    setupCanvas(100, 100)
+    await expect(importImagePng(new Blob(), 0.5)).rejects.toThrow(/maxDim/)
+  })
+
+  it('throws for a non-finite maxDim', async () => {
+    setupCanvas(100, 100)
+    await expect(importImagePng(new Blob(), Infinity)).rejects.toThrow(/maxDim/)
+  })
 })

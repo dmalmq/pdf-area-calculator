@@ -62,31 +62,28 @@ describe('facilityDetailBBox', () => {
 describe('detailFit', () => {
   it('fits a square bbox with 5% padding into a matching square area', () => {
     // paddedW = paddedH = 110; scale = 110/110 = 1; centered => no offset
-    expect(detailFit({ x: 0, y: 0, w: 100, h: 100 }, { width: 110, height: 110 })).toEqual({
-      scale: 1,
-      offsetX: 0,
-      offsetY: 0
-    })
+    const fit = detailFit({ x: 0, y: 0, w: 100, h: 100 }, { width: 110, height: 110 })
+    expect(fit.scale).toBeCloseTo(1, 6)
+    expect(fit.offsetX).toBeCloseTo(0, 6)
+    expect(fit.offsetY).toBeCloseTo(0, 6)
   })
 
   it('binds on width for a wide bbox and centers vertically', () => {
     // paddedW = 220, paddedH = 110; scale = min(220/220, 220/110) = 1
     // offsetX = (220 - 220)/2 = 0; offsetY = (220 - 110)/2 = 55
-    expect(detailFit({ x: 0, y: 0, w: 200, h: 100 }, { width: 220, height: 220 })).toEqual({
-      scale: 1,
-      offsetX: 0,
-      offsetY: 55
-    })
+    const fit = detailFit({ x: 0, y: 0, w: 200, h: 100 }, { width: 220, height: 220 })
+    expect(fit.scale).toBeCloseTo(1, 6)
+    expect(fit.offsetX).toBeCloseTo(0, 6)
+    expect(fit.offsetY).toBeCloseTo(55, 6)
   })
 
   it('binds on height for a tall bbox and centers horizontally', () => {
     // paddedW = 110, paddedH = 220; scale = min(220/110, 220/220) = 1
     // offsetX = (220 - 110)/2 = 55; offsetY = 0
-    expect(detailFit({ x: 0, y: 0, w: 100, h: 200 }, { width: 220, height: 220 })).toEqual({
-      scale: 1,
-      offsetX: 55,
-      offsetY: 0
-    })
+    const fit = detailFit({ x: 0, y: 0, w: 100, h: 200 }, { width: 220, height: 220 })
+    expect(fit.scale).toBeCloseTo(1, 6)
+    expect(fit.offsetX).toBeCloseTo(55, 6)
+    expect(fit.offsetY).toBeCloseTo(0, 6)
   })
 
   it('maps the bbox center to the center of the available area', () => {
@@ -107,6 +104,28 @@ describe('detailFit', () => {
     const fit = detailFit({ x: 0, y: 0, w: 200, h: 200 }, { width: 110, height: 110 })
     expect(fit.scale).toBeCloseTo(0.5, 6)
     expect(fit.offsetX).toBeCloseTo(0, 6)
+    expect(fit.offsetY).toBeCloseTo(0, 6)
+  })
+
+  it('returns a finite transform centering a point bbox in the available area', () => {
+    const avail = { width: 110, height: 220 }
+    const fit = detailFit({ x: 10, y: 20, w: 0, h: 0 }, avail)
+    expect(fit.scale).toBeCloseTo(1, 6)
+    expect(fit.offsetX).toBeCloseTo(55, 6)
+    expect(fit.offsetY).toBeCloseTo(110, 6)
+    // the point maps to the center of avail
+    const tx = (10 - 10) * fit.scale + fit.offsetX
+    const ty = (20 - 20) * fit.scale + fit.offsetY
+    expect(tx).toBeCloseTo(avail.width / 2, 6)
+    expect(ty).toBeCloseTo(avail.height / 2, 6)
+  })
+
+  it('fits on the nonzero dimension when the bbox has zero width', () => {
+    // paddedW = 0, paddedH = 110; scale binds on height = 220/110 = 2
+    // offsetX = 220/2 = 110 (centers the degenerate x); offsetY = 0
+    const fit = detailFit({ x: 5, y: 0, w: 0, h: 100 }, { width: 220, height: 220 })
+    expect(fit.scale).toBeCloseTo(2, 6)
+    expect(fit.offsetX).toBeCloseTo(110, 6)
     expect(fit.offsetY).toBeCloseTo(0, 6)
   })
 })
