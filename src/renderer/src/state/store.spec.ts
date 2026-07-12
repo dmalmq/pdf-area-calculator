@@ -1095,6 +1095,31 @@ describe('detailCandidates and enable/disable', () => {
     store.getState().deleteArea(facility.id)
     expect(store.getState().detailPages).toEqual([{ name: 'A', pageIndex: 0 }])
   })
+
+  it('prunes a DetailPage when the last polygon of its combo is renamed away', () => {
+    const facility = square(0, 'A')
+    const store = createAreaStore({
+      pages,
+      names: ['A'],
+      areas: [facility],
+      detailPages: [{ name: 'A', pageIndex: 0, image: 'PNG' }]
+    })
+    store.getState().renameArea(facility.id, 'B')
+    expect(store.getState().detailPages).toEqual([])
+  })
+
+  it('keeps a DetailPage when a non-last polygon of its combo is renamed away', () => {
+    const facility = square(0, 'A')
+    const other = storeAt(0, 'A', 5, 5)
+    const store = createAreaStore({
+      pages,
+      names: ['A'],
+      areas: [facility, other],
+      detailPages: [{ name: 'A', pageIndex: 0 }]
+    })
+    store.getState().renameArea(facility.id, 'B')
+    expect(store.getState().detailPages).toEqual([{ name: 'A', pageIndex: 0 }])
+  })
 })
 
 describe('detail editor and image actions', () => {

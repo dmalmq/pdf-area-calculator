@@ -698,11 +698,15 @@ export function createAreaStore(initial?: Partial<AppState>): StoreApi<AreaStore
     renameArea(id, raw) {
       const name = raw.trim()
       if (!name) return
-      set((state) => ({
-        areas: state.areas.map((area) => (area.id === id ? { ...area, name } : area)),
-        names: withName(state.names, name),
-        colors: withNameColor(state.colors, name)
-      }))
+      set((state) => {
+        const areas = state.areas.map((area) => (area.id === id ? { ...area, name } : area))
+        return {
+          areas,
+          detailPages: pruneDetailPages({ areas, detailPages: state.detailPages }),
+          names: withName(state.names, name),
+          colors: withNameColor(state.colors, name)
+        }
+      })
     },
 
     selectArea(id) {
