@@ -756,11 +756,12 @@ export function PdfStage({
         return
       }
       event.preventDefault()
+      flushWheelBatch()
       void placeDetailImage(blob)
     }
     window.addEventListener('paste', onPaste)
     return () => window.removeEventListener('paste', onPaste)
-  }, [detailEditing, onToast, placeDetailImage])
+  }, [detailEditing, flushWheelBatch, onToast, placeDetailImage])
 
   // A wheel batch only opens in detail mode; flush it when detail mode exits or the
   // component unmounts so its undo entry can't merge with the next interaction.
