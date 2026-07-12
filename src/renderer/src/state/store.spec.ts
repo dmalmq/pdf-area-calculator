@@ -15,7 +15,6 @@ import {
   toProjectFile
 } from './store'
 import type { Area, DetailPage, PageState } from './types'
-import type { DetailCandidate } from './store'
 
 const pages: PageState[] = [
   { pageIndex: 0, label: 'Page 1', scale: { kind: 'custom', mmPerPt: 10 } },

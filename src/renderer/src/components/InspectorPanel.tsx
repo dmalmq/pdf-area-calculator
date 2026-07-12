@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 
 import { useT } from '../i18n'
-import { areaM2, mmPerPtFor, useAreaStore } from '../state/store'
+import { areaM2, detailCandidates, mmPerPtFor, useAreaStore } from '../state/store'
 import { areaNetPt2 } from '../geometry/area'
 import type { Pt } from '../state/types'
 
@@ -58,6 +58,10 @@ export function InspectorPanel({
   const storeLabelMode = useAreaStore((s) => s.storeLabelMode)
   const setStoreLabelMode = useAreaStore((s) => s.setStoreLabelMode)
   const mmPerPt = useAreaStore((s) => mmPerPtFor(s, s.pages[s.activePageIndex]?.pageIndex ?? 0))
+  const detailPages = useAreaStore((s) => s.detailPages)
+  const setActivePage = useAreaStore((s) => s.setActivePage)
+  const setDetailPageEnabled = useAreaStore((s) => s.setDetailPageEnabled)
+  const openDetailEditor = useAreaStore((s) => s.openDetailEditor)
 
   const page = pages[activePageIndex]
   const selected = areas.find((area) => area.id === selectedAreaId) ?? null
@@ -73,6 +77,10 @@ export function InspectorPanel({
   // live scale until the user edits it.
   const tab: InspectorTab = selected ? (userTab ?? 'selection') : 'page'
   const custom = customEdited ?? (mmPerPt != null ? String(Number(mmPerPt.toFixed(6))) : '')
+  const candidates = useMemo(
+    () => detailCandidates({ areas, names, pages }),
+    [areas, names, pages]
+  )
 
   const calibrationReady = calibrationDraft.length === 2 && Number(realMeters) > 0
   const calibrationDistance =
@@ -397,6 +405,56 @@ export function InspectorPanel({
                   {t('storeLabel.renumber')}
                 </button>
               </div>
+              <details className="disclosure">
+                <summary>{t('detail.heading')}</summary>
+                {candidates.length === 0 ? (
+                  <p className="hint">{t('detail.empty')}</p>
+                ) : (
+                  <ul className="detail-list">
+                    {candidates.map((candidate) => {
+                      const enabled = detailPages.some(
+                        (dp) => dp.name === candidate.name && dp.pageIndex === candidate.pageIndex
+                      )
+                      return (
+                        <li
+                          key={`${candidate.name}@${candidate.pageIndex}`}
+                          className="detail-row"
+                        >
+                          <label className="detail-row__label">
+                            <input
+                              type="checkbox"
+                              checked={enabled}
+                              onChange={(event) =>
+                                setDetailPageEnabled(
+                                  candidate.name,
+                                  candidate.pageIndex,
+                                  event.target.checked
+                                )
+                              }
+                            />
+                            <span className="detail-row__name">{candidate.name}</span>
+                            <span className="detail-row__meta">
+                              {candidate.level} · {t('detail.stores', { n: candidate.stores })}
+                            </span>
+                          </label>
+                          {enabled ? (
+                            <button
+                              type="button"
+                              className="btn btn--icon"
+                              onClick={() => {
+                                setActivePage(candidate.pageIndex)
+                                openDetailEditor(candidate.name, candidate.pageIndex)
+                              }}
+                            >
+                              {t('detail.edit')}
+                            </button>
+                          ) : null}
+                        </li>
+                      )
+                    })}
+                  </ul>
+                )}
+              </details>
             </>
           )}
         </div>
