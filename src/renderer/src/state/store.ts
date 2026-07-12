@@ -11,6 +11,7 @@ import type {
   AreaKind,
   CopiedArea,
   DetailPage,
+  DetailTransform,
   FacilityLevelRow,
   FacilityRow,
   LegendEntry,
@@ -35,6 +36,11 @@ export interface AreaStore extends AppState {
   addArea(area: Area): void
   deleteArea(id: string): void
   setDetailPageEnabled(name: string, pageIndex: number, enabled: boolean): void
+  setDetailImage(name: string, pageIndex: number, image: string, transform: DetailTransform): void
+  setDetailTransform(name: string, pageIndex: number, transform: DetailTransform): void
+  removeDetailImage(name: string, pageIndex: number): void
+  openDetailEditor(name: string, pageIndex: number): void
+  closeDetailEditor(): void
   markProjectSaved(): void
   renameArea(id: string, name: string): void
   selectArea(id: string | null): void
@@ -648,6 +654,41 @@ export function createAreaStore(initial?: Partial<AppState>): StoreApi<AreaStore
           )
         }
       })
+    },
+    openDetailEditor(name, pageIndex) {
+      set({ detailEditing: { name, pageIndex }, activePageIndex: pageIndex, selectedAreaId: null })
+    },
+    closeDetailEditor() {
+      set({ detailEditing: null })
+    },
+    setDetailImage(name, pageIndex, image, transform) {
+      set((state) => {
+        const exists = state.detailPages.some(
+          (dp) => dp.name === name && dp.pageIndex === pageIndex
+        )
+        const detailPages = exists
+          ? state.detailPages.map((dp) =>
+              dp.name === name && dp.pageIndex === pageIndex ? { ...dp, image, transform } : dp
+            )
+          : [...state.detailPages, { name, pageIndex, image, transform }]
+        return { detailPages }
+      })
+    },
+    setDetailTransform(name, pageIndex, transform) {
+      set((state) => ({
+        detailPages: state.detailPages.map((dp) =>
+          dp.name === name && dp.pageIndex === pageIndex ? { ...dp, transform } : dp
+        )
+      }))
+    },
+    removeDetailImage(name, pageIndex) {
+      set((state) => ({
+        detailPages: state.detailPages.map((dp) =>
+          dp.name === name && dp.pageIndex === pageIndex
+            ? { name: dp.name, pageIndex: dp.pageIndex }
+            : dp
+        )
+      }))
     },
 
     markProjectSaved() {

@@ -1096,3 +1096,79 @@ describe('detailCandidates and enable/disable', () => {
     expect(store.getState().detailPages).toEqual([{ name: 'A', pageIndex: 0 }])
   })
 })
+
+describe('detail editor and image actions', () => {
+  const t0 = { x: 0, y: 0, scale: 1, rotation: 0 }
+  const t1 = { x: 10, y: 20, scale: 2, rotation: 0 }
+  const t2 = { x: 11, y: 21, scale: 2, rotation: 5 }
+
+  it('opens the editor, switches the active page, and clears selection', () => {
+    const area = square(1, 'A')
+    const store = createAreaStore({
+      pages,
+      names: ['A'],
+      areas: [area],
+      selectedAreaId: area.id,
+      detailPages: [{ name: 'A', pageIndex: 1 }]
+    })
+    store.getState().openDetailEditor('A', 1)
+    expect(store.getState().detailEditing).toEqual({ name: 'A', pageIndex: 1 })
+    expect(store.getState().activePageIndex).toBe(1)
+    expect(store.getState().selectedAreaId).toBeNull()
+  })
+
+  it('closes the editor without touching detailPages', () => {
+    const store = createAreaStore({
+      detailPages: [{ name: 'A', pageIndex: 0 }],
+      detailEditing: { name: 'A', pageIndex: 0 }
+    })
+    store.getState().closeDetailEditor()
+    expect(store.getState().detailEditing).toBeNull()
+    expect(store.getState().detailPages).toEqual([{ name: 'A', pageIndex: 0 }])
+  })
+
+  it('opening and closing the editor does not push undo history', () => {
+    const store = createAreaStore({ detailPages: [{ name: 'A', pageIndex: 0 }] })
+    store.getState().openDetailEditor('A', 0)
+    store.getState().closeDetailEditor()
+    expect(store.getState().undoStack).toHaveLength(0)
+  })
+
+  it('attaches an image and transform to the enabled page', () => {
+    const store = createAreaStore({ detailPages: [{ name: 'A', pageIndex: 0 }] })
+    store.getState().setDetailImage('A', 0, 'PNG', t1)
+    expect(store.getState().detailPages).toEqual([
+      { name: 'A', pageIndex: 0, image: 'PNG', transform: t1 }
+    ])
+  })
+
+  it('setDetailImage upserts when the page is not yet present', () => {
+    const store = createAreaStore({ detailPages: [] })
+    store.getState().setDetailImage('A', 0, 'PNG', t1)
+    expect(store.getState().detailPages).toEqual([
+      { name: 'A', pageIndex: 0, image: 'PNG', transform: t1 }
+    ])
+  })
+
+  it('coalesces a transform gesture into one undo step and reverts it', () => {
+    const store = createAreaStore({
+      detailPages: [{ name: 'A', pageIndex: 0, image: 'PNG', transform: t0 }]
+    })
+    store.getState().beginInteraction()
+    store.getState().setDetailTransform('A', 0, t1)
+    store.getState().setDetailTransform('A', 0, t2)
+    store.getState().endInteraction()
+    expect(store.getState().detailPages[0].transform).toEqual(t2)
+    expect(store.getState().undoStack).toHaveLength(1)
+    store.getState().undo()
+    expect(store.getState().detailPages[0].transform).toEqual(t0)
+  })
+
+  it('removes the image but keeps the page enabled', () => {
+    const store = createAreaStore({
+      detailPages: [{ name: 'A', pageIndex: 0, image: 'PNG', transform: t1 }]
+    })
+    store.getState().removeDetailImage('A', 0)
+    expect(store.getState().detailPages).toEqual([{ name: 'A', pageIndex: 0 }])
+  })
+})
