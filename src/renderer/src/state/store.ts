@@ -34,6 +34,7 @@ export interface AreaStore extends AppState {
   applyScaleToAll(pageIndex: number): void
   addArea(area: Area): void
   deleteArea(id: string): void
+  setDetailPageEnabled(name: string, pageIndex: number, enabled: boolean): void
   markProjectSaved(): void
   renameArea(id: string, name: string): void
   selectArea(id: string | null): void
@@ -351,6 +352,31 @@ export function facilitiesOnPage(
     .map((name) => ({ name, color: colorForBusiness(state, name) }))
 }
 
+export interface DetailCandidate {
+  name: string
+  pageIndex: number
+  level: string
+  stores: number
+}
+
+export function detailCandidates(
+  state: Pick<AppState, 'areas' | 'names' | 'pages'>
+): DetailCandidate[] {
+  const result: DetailCandidate[] = []
+  for (const name of state.names) {
+    const owned = state.areas.filter((area) => area.name === name)
+    if (owned.length === 0) continue
+    const pageIndices = [...new Set(owned.map((area) => area.pageIndex))].sort((a, b) => a - b)
+    for (const pageIndex of pageIndices) {
+      const stores = owned.filter(
+        (area) => area.pageIndex === pageIndex && area.kind === 'store'
+      ).length
+      result.push({ name, pageIndex, level: levelOf(state, pageIndex), stores })
+    }
+  }
+  return result
+}
+
 export function nextStoreCode(
   state: Pick<AppState, 'areas' | 'prefixes'>,
   facilityName: string
@@ -479,6 +505,12 @@ function restoreFields(json: string): Partial<AppState> {
   }
 }
 
+function pruneDetailPages(state: Pick<AppState, 'areas' | 'detailPages'>): DetailPage[] {
+  return state.detailPages.filter((dp) =>
+    state.areas.some((area) => area.name === dp.name && area.pageIndex === dp.pageIndex)
+  )
+}
+
 export function createAreaStore(initial?: Partial<AppState>): StoreApi<AreaStore> {
   let suppressHistory = false
   let interactionSnapshot: string | null = null
@@ -493,7 +525,8 @@ export function createAreaStore(initial?: Partial<AppState>): StoreApi<AreaStore
     a.legendVisible !== b.legendVisible ||
     a.legendScale !== b.legendScale ||
     a.legendOrientation !== b.legendOrientation ||
-    a.storeLabelMode !== b.storeLabelMode
+    a.storeLabelMode !== b.storeLabelMode ||
+    a.detailPages !== b.detailPages
 
   const store = createStore<AreaStore>((set, get) => ({
     ...initialState,
@@ -589,10 +622,32 @@ export function createAreaStore(initial?: Partial<AppState>): StoreApi<AreaStore
     },
 
     deleteArea(id) {
-      set((state) => ({
-        areas: state.areas.filter((candidate) => candidate.id !== id),
-        selectedAreaId: state.selectedAreaId === id ? null : state.selectedAreaId
-      }))
+      set((state) => {
+        const areas = state.areas.filter((candidate) => candidate.id !== id)
+        return {
+          areas,
+          detailPages: pruneDetailPages({ areas, detailPages: state.detailPages }),
+          selectedAreaId: state.selectedAreaId === id ? null : state.selectedAreaId
+        }
+      })
+    },
+
+    setDetailPageEnabled(name, pageIndex, enabled) {
+      set((state) => {
+        const exists = state.detailPages.some(
+          (dp) => dp.name === name && dp.pageIndex === pageIndex
+        )
+        if (enabled) {
+          if (exists) return {}
+          return { detailPages: [...state.detailPages, { name, pageIndex }] }
+        }
+        if (!exists) return {}
+        return {
+          detailPages: state.detailPages.filter(
+            (dp) => !(dp.name === name && dp.pageIndex === pageIndex)
+          )
+        }
+      })
     },
 
     markProjectSaved() {

@@ -4,6 +4,7 @@ import {
   aggregate,
   colorForBusiness,
   createAreaStore,
+  detailCandidates,
   facilitiesOnPage,
   nextStoreCode,
   reportByFacility,
@@ -14,6 +15,7 @@ import {
   toProjectFile
 } from './store'
 import type { Area, DetailPage, PageState } from './types'
+import type { DetailCandidate } from './store'
 
 const pages: PageState[] = [
   { pageIndex: 0, label: 'Page 1', scale: { kind: 'custom', mmPerPt: 10 } },
@@ -1008,5 +1010,89 @@ describe('detail pages persistence', () => {
     store.getState().importProject({ pages, names: [], areas: [] })
     expect(store.getState().detailPages).toEqual([])
     expect(store.getState().detailEditing).toBeNull()
+  })
+})
+
+describe('detailCandidates and enable/disable', () => {
+  it('orders candidates by names order then page ascending, counting stores', () => {
+    const store = createAreaStore({
+      pages,
+      names: ['B', 'A'],
+      areas: [
+        square(1, 'A'),
+        square(0, 'A'),
+        storeAt(0, 'A', 3, 3),
+        storeAt(0, 'A', 6, 6),
+        square(0, 'B')
+      ]
+    })
+
+    expect(detailCandidates(store.getState())).toEqual([
+      { name: 'B', pageIndex: 0, level: 'Page 1', stores: 0 },
+      { name: 'A', pageIndex: 0, level: 'Page 1', stores: 2 },
+      { name: 'A', pageIndex: 1, level: 'Page 2', stores: 0 }
+    ])
+  })
+
+  it('lists a store-only combo as a candidate', () => {
+    const store = createAreaStore({
+      pages,
+      names: ['A'],
+      areas: [storeAt(1, 'A', 5, 5)]
+    })
+    expect(detailCandidates(store.getState())).toEqual([
+      { name: 'A', pageIndex: 1, level: 'Page 2', stores: 1 }
+    ])
+  })
+
+  it('enables a combo by appending a DetailPage and is idempotent', () => {
+    const store = createAreaStore({ pages, names: ['A'], areas: [square(0, 'A')] })
+    store.getState().setDetailPageEnabled('A', 0, true)
+    store.getState().setDetailPageEnabled('A', 0, true)
+    expect(store.getState().detailPages).toEqual([{ name: 'A', pageIndex: 0 }])
+  })
+
+  it('disabling removes the entry and its image', () => {
+    const store = createAreaStore({
+      detailPages: [
+        { name: 'A', pageIndex: 0, image: 'PNG', transform: { x: 0, y: 0, scale: 1, rotation: 0 } }
+      ]
+    })
+    store.getState().setDetailPageEnabled('A', 0, false)
+    expect(store.getState().detailPages).toEqual([])
+  })
+
+  it('records enable on the undo stack and undo reverts it', () => {
+    const store = createAreaStore({ pages, names: ['A'], areas: [square(0, 'A')] })
+    store.getState().setDetailPageEnabled('A', 0, true)
+    expect(store.getState().detailPages).toEqual([{ name: 'A', pageIndex: 0 }])
+    expect(store.getState().undoStack.length).toBeGreaterThan(0)
+    store.getState().undo()
+    expect(store.getState().detailPages).toEqual([])
+  })
+
+  it('prunes a DetailPage when the last polygon of its combo is deleted', () => {
+    const facility = square(0, 'A')
+    const store = createAreaStore({
+      pages,
+      names: ['A'],
+      areas: [facility],
+      detailPages: [{ name: 'A', pageIndex: 0, image: 'PNG' }]
+    })
+    store.getState().deleteArea(facility.id)
+    expect(store.getState().detailPages).toEqual([])
+  })
+
+  it('keeps a DetailPage while any polygon of its combo remains', () => {
+    const facility = square(0, 'A')
+    const other = storeAt(0, 'A', 5, 5)
+    const store = createAreaStore({
+      pages,
+      names: ['A'],
+      areas: [facility, other],
+      detailPages: [{ name: 'A', pageIndex: 0 }]
+    })
+    store.getState().deleteArea(facility.id)
+    expect(store.getState().detailPages).toEqual([{ name: 'A', pageIndex: 0 }])
   })
 })
