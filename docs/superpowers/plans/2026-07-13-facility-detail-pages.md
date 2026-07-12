@@ -1504,6 +1504,53 @@ line 555):
   }, [closeDetailEditor, detailEditing])
 ```
 
+- [ ] **Step 8b: Auto-frame the facility on entry and restore the camera on exit**
+
+`detailFrame` (Step 3) must actually drive the camera. The store's `zoom` scales the fixed
+1.5-scale viewport and `pan` is the scroll offset (an existing effect copies `pan` to
+`scrollRef`), so framing = one `setZoom` + one `setPan`. Add this effect after the Esc effect
+(Step 8). It is idempotent per detail-editing session via a key ref, so the exhaustive
+dependency list is safe (camera changes re-run it but hit the key guard); the pre-entry camera
+is saved once and restored when `detailEditing` clears:
+
+```ts
+  const detailCamera = useRef<{ key: string; prev: { zoom: number; pan: Pt } } | null>(null)
+
+  useEffect(() => {
+    const scroll = scrollRef.current
+    if (detailEditing && viewport && scroll) {
+      const key = `${detailEditing.name}\u0000${detailEditing.pageIndex}`
+      if (detailCamera.current?.key === key) return
+      const bbox = facilityDetailBBox(areas, detailEditing.name, detailEditing.pageIndex)
+      if (!bbox) return
+      detailCamera.current = { key, prev: detailCamera.current?.prev ?? { zoom, pan } }
+      // PDF points are bottom-left origin, viewport px are y-down: the rect's viewport
+      // top-left is the PDF point (x, y + h), its bottom-right is (x + w, y).
+      const tl = viewportPt(viewport, { x: bbox.x, y: bbox.y + bbox.h })
+      const br = viewportPt(viewport, { x: bbox.x + bbox.w, y: bbox.y })
+      const framed = detailFrame({
+        rectX: tl.x,
+        rectY: tl.y,
+        rectW: br.x - tl.x,
+        rectH: br.y - tl.y,
+        containerW: scroll.clientWidth,
+        containerH: scroll.clientHeight,
+        margin: STAGE_MARGIN
+      })
+      setZoom(framed.zoom)
+      setPan(framed.pan)
+    } else if (!detailEditing && detailCamera.current) {
+      const { prev } = detailCamera.current
+      detailCamera.current = null
+      setZoom(prev.zoom)
+      setPan(prev.pan)
+    }
+  }, [areas, detailEditing, pan, setPan, setZoom, viewport, zoom])
+```
+
+(`setZoom`/`setPan` are zustand actions, not React state setters, so the project's
+setState-in-effect lint rule does not apply; the ref is only touched inside the effect.)
+
 - [ ] **Step 9: Disable normal interactions in detail mode**
 
 In `onPointerDown`, immediately after the two lines computing `pdfPt` and `viewportPoint` and
@@ -1615,8 +1662,8 @@ Expected observations:
   other facilities are gone.
 - A floating dark toolbar appears bottom-center with the controls hint and a **Done** (`完了`)
   button; **Remove image** does not appear yet (no image).
-- Pressing **Esc** or clicking **Done** exits detail mode: the PDF bitmap reappears and full
-  overlays return.
+- Pressing **Esc** or clicking **Done** exits detail mode: the PDF bitmap reappears, full
+  overlays return, and the zoom/pan you had before entering detail mode is restored.
 - While in detail mode, clicking on the canvas with the draw/edit tools does nothing (no new
   vertices, no selection); middle-drag / pan tool still pans.
 
