@@ -134,7 +134,13 @@ describe('scaleDetailAboutCursor', () => {
   it('moves the top-left so the cursor stays anchored when it is off-corner', () => {
     // image top-left (0,0), scale 1, 10x10 → center PDF (5,-5). Cursor at center, factor 2.
     // center is fixed, so new top-left = (5 - 10*2/2, -5 + 10*2/2) = (-5, 5).
-    const r = scaleDetailAboutCursor({ x: 0, y: 0, scale: 1, rotation: 0 }, 10, 10, { x: 5, y: -5 }, 2)
+    const r = scaleDetailAboutCursor(
+      { x: 0, y: 0, scale: 1, rotation: 0 },
+      10,
+      10,
+      { x: 5, y: -5 },
+      2
+    )
     expect(r.x).toBeCloseTo(-5)
     expect(r.y).toBeCloseTo(5)
     expect(r.scale).toBeCloseTo(2)

@@ -59,11 +59,7 @@ interface AnchoredZoomInput {
   nextZoom: number
 }
 
-export function eventToPdfPt(
-  e: MouseEvent,
-  canvas: HTMLCanvasElement,
-  viewport: PageViewport
-): Pt {
+export function eventToPdfPt(e: MouseEvent, canvas: HTMLCanvasElement, viewport: PageViewport): Pt {
   const rect = canvas.getBoundingClientRect()
   const vx = (e.clientX - rect.left) * (canvas.width / rect.width)
   const vy = (e.clientY - rect.top) * (canvas.height / rect.height)

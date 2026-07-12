@@ -13,10 +13,7 @@ export interface DetailHeaderPng {
   height: number
 }
 
-export async function renderDetailHeaderPng(
-  name: string,
-  level: string
-): Promise<DetailHeaderPng> {
+export async function renderDetailHeaderPng(name: string, level: string): Promise<DetailHeaderPng> {
   const dpr = 2
   const canvas = document.createElement('canvas')
   const measureCtx = canvas.getContext('2d')

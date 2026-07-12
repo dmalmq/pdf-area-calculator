@@ -77,10 +77,7 @@ export function InspectorPanel({
   // live scale until the user edits it.
   const tab: InspectorTab = selected ? (userTab ?? 'selection') : 'page'
   const custom = customEdited ?? (mmPerPt != null ? String(Number(mmPerPt.toFixed(6))) : '')
-  const candidates = useMemo(
-    () => detailCandidates({ areas, names, pages }),
-    [areas, names, pages]
-  )
+  const candidates = useMemo(() => detailCandidates({ areas, names, pages }), [areas, names, pages])
 
   const calibrationReady = calibrationDraft.length === 2 && Number(realMeters) > 0
   const calibrationDistance =
@@ -416,10 +413,7 @@ export function InspectorPanel({
                         (dp) => dp.name === candidate.name && dp.pageIndex === candidate.pageIndex
                       )
                       return (
-                        <li
-                          key={`${candidate.name}@${candidate.pageIndex}`}
-                          className="detail-row"
-                        >
+                        <li key={`${candidate.name}@${candidate.pageIndex}`} className="detail-row">
                           <label className="detail-row__label">
                             <input
                               type="checkbox"
