@@ -602,6 +602,8 @@ export function PdfStage({
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
+      // Detail mode handles keys via its dedicated Escape listener; skip global handling.
+      if (detailEditing) return
       const target = event.target
       const editingText =
         target instanceof HTMLElement && ['INPUT', 'SELECT', 'TEXTAREA'].includes(target.tagName)
@@ -637,7 +639,7 @@ export function PdfStage({
 
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [closeDraft, draft.length, onToast, removeVertex, selectedVertex, tool])
+  }, [closeDraft, detailEditing, draft.length, onToast, removeVertex, selectedVertex, tool])
 
   useEffect(() => {
     if (!detailEditing) return
@@ -666,10 +668,17 @@ export function PdfStage({
       const bbox = facilityDetailBBox(areas, detailEditing.name, detailEditing.pageIndex)
       if (!bbox) return
       detailCamera.current = { key, viewport, prev: prior?.prev ?? { zoom, pan } }
+      // Pad the union by 5% per side so outermost vertices don't touch the container edges.
+      const pad = {
+        x: bbox.x - bbox.w * 0.05,
+        y: bbox.y - bbox.h * 0.05,
+        w: bbox.w * 1.1,
+        h: bbox.h * 1.1
+      }
       // PDF points are bottom-left origin, viewport px are y-down: the rect's viewport
       // top-left is the PDF point (x, y + h), its bottom-right is (x + w, y).
-      const tl = viewportPt(viewport, { x: bbox.x, y: bbox.y + bbox.h })
-      const br = viewportPt(viewport, { x: bbox.x + bbox.w, y: bbox.y })
+      const tl = viewportPt(viewport, { x: pad.x, y: pad.y + pad.h })
+      const br = viewportPt(viewport, { x: pad.x + pad.w, y: pad.y })
       const framed = detailFrame({
         rectX: tl.x,
         rectY: tl.y,
@@ -977,6 +986,7 @@ export function PdfStage({
 
   const onDoubleClick = (event: React.MouseEvent<HTMLCanvasElement>): void => {
     if (!viewport || !overlayRef.current) return
+    if (detailEditing) return
     const pdfPt = eventToPdfPt(event.nativeEvent as PointerEvent, overlayRef.current, viewport)
     if (tool === 'edit') {
       const viewportPoint = eventToViewportPt(event.nativeEvent as PointerEvent, overlayRef.current)
@@ -1002,6 +1012,7 @@ export function PdfStage({
   const onWheel = (event: React.WheelEvent<HTMLCanvasElement>): void => {
     const scroll = scrollRef.current
     if (!scroll) return
+    if (detailEditing) return
     event.preventDefault()
     const rect = scroll.getBoundingClientRect()
     const current = { x: event.clientX - rect.left, y: event.clientY - rect.top }
