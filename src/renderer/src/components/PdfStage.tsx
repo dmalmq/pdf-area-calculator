@@ -331,6 +331,12 @@ export function PdfStage({
   const [imageEpoch, setImageEpoch] = useState(0)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const wheelBatch = useRef<number | null>(null)
+  const flushWheelBatch = useCallback((): void => {
+    if (wheelBatch.current == null) return
+    window.clearTimeout(wheelBatch.current)
+    wheelBatch.current = null
+    endInteraction()
+  }, [endInteraction])
   const page = pages[activePageIndex]
   const sourceIndex = page ? page.pageIndex : 0
   const pageAreas = useMemo(
@@ -756,6 +762,13 @@ export function PdfStage({
     return () => window.removeEventListener('paste', onPaste)
   }, [detailEditing, onToast, placeDetailImage])
 
+  // A wheel batch only opens in detail mode; flush it when detail mode exits or the
+  // component unmounts so its undo entry can't merge with the next interaction.
+  useEffect(() => {
+    if (!detailEditing) return
+    return () => flushWheelBatch()
+  }, [detailEditing, flushWheelBatch])
+
   const detailCamera = useRef<{
     key: string
     viewport: PageViewport
@@ -907,6 +920,7 @@ export function PdfStage({
             img.naturalHeight
           )
           if (pointInImageRect(local, img.naturalWidth, img.naturalHeight)) {
+            flushWheelBatch()
             beginInteraction()
             setDrag({
               kind: 'detailImage',
@@ -942,6 +956,7 @@ export function PdfStage({
       viewportPoint.y >= bounds.y &&
       viewportPoint.y <= bounds.y + bounds.h
     ) {
+      flushWheelBatch()
       beginInteraction()
       setDrag({
         kind: 'legend',
@@ -962,6 +977,7 @@ export function PdfStage({
     if (tool === 'edit') {
       const tagArea = findTagAt(viewportPoint)
       if (tagArea) {
+        flushWheelBatch()
         beginInteraction()
         setDrag({
           kind: 'label',
@@ -977,6 +993,7 @@ export function PdfStage({
       const vertex = findVertexHit(viewportPoint)
       if (vertex) {
         setSelectedVertex(vertex)
+        flushWheelBatch()
         beginInteraction()
         setDrag({
           kind: 'vertex',
@@ -997,6 +1014,7 @@ export function PdfStage({
       if (bodyArea) {
         if (bodyArea.id !== selectedAreaId) selectArea(bodyArea.id)
         setSelectedVertex(null)
+        flushWheelBatch()
         beginInteraction()
         setDrag({
           kind: 'area',
@@ -1323,19 +1341,36 @@ export function PdfStage({
             style={{ display: 'none' }}
             onChange={onFileChosen}
           />
-          <button type="button" className="btn" onClick={() => fileInputRef.current?.click()}>
+          <button
+            type="button"
+            className="btn"
+            onClick={() => {
+              flushWheelBatch()
+              fileInputRef.current?.click()
+            }}
+          >
             {t('detail.addImage')}
           </button>
           {currentDetail?.image ? (
             <button
               type="button"
               className="btn"
-              onClick={() => removeDetailImage(detailEditing.name, detailEditing.pageIndex)}
+              onClick={() => {
+                flushWheelBatch()
+                removeDetailImage(detailEditing.name, detailEditing.pageIndex)
+              }}
             >
               {t('detail.removeImage')}
             </button>
           ) : null}
-          <button type="button" className="btn btn--primary" onClick={closeDetailEditor}>
+          <button
+            type="button"
+            className="btn btn--primary"
+            onClick={() => {
+              flushWheelBatch()
+              closeDetailEditor()
+            }}
+          >
             {t('detail.done')}
           </button>
         </div>
