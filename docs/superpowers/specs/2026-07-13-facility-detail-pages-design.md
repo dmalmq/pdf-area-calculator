@@ -102,8 +102,9 @@ When `detailEditing` is set, `PdfStage` renders in detail mode:
 - The PDF bitmap canvas is hidden (white background). The same page viewport
   and coordinate helpers (`viewportPt`, `eventToPdfPt`) are reused unchanged.
 - **Auto-framing:** compute the bbox of the facility's polygons + stores on the
-  page, pad 5%, and derive zoom/pan to fit the stage. This is the same crop the
-  export uses — WYSIWYG.
+  page, pad 5%, and derive zoom/pan to fit the stage. Framing may differ
+  slightly from the export (stage aspect ≠ A4 aspect), but image↔polygon
+  alignment is exact in both — the transform lives in PDF-point space.
 - **Drawn (in order):** the image (its `DetailTransform`, ~90% opacity), the
   facility outline(s), store outlines, and store tags — the existing overlay
   draw path filtered to this facility's areas. Tags respect `storeLabelMode`.
