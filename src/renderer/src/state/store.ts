@@ -520,6 +520,30 @@ function pruneDetailPages(state: Pick<AppState, 'areas' | 'detailPages'>): Detai
 export function createAreaStore(initial?: Partial<AppState>): StoreApi<AreaStore> {
   let suppressHistory = false
   let interactionSnapshot: string | null = null
+  let detailReturnView: { activePageIndex: number; zoom: number; pan: Pt } | null = null
+  const detailEditorValid = (
+    editing: AppState['detailEditing'],
+    detailPages: DetailPage[],
+    areas: Area[]
+  ): boolean =>
+    editing != null &&
+    detailPages.some((dp) => dp.name === editing.name && dp.pageIndex === editing.pageIndex) &&
+    areas.some((area) => area.name === editing.name && area.pageIndex === editing.pageIndex)
+  const closeDetailFields = (): Partial<AppState> => {
+    const view = detailReturnView
+    detailReturnView = null
+    return {
+      detailEditing: null,
+      ...(view ?? {})
+    }
+  }
+  const reconcileDetailEditor = (
+    editing: AppState['detailEditing'],
+    detailPages: DetailPage[],
+    areas: Area[]
+  ): Partial<AppState> =>
+    editing && !detailEditorValid(editing, detailPages, areas) ? closeDetailFields() : {}
+
   const snapshot = (state: AppState): string => JSON.stringify(toProjectFile(state))
   const editChanged = (a: AppState, b: AppState): boolean =>
     a.areas !== b.areas ||
@@ -630,10 +654,12 @@ export function createAreaStore(initial?: Partial<AppState>): StoreApi<AreaStore
     deleteArea(id) {
       set((state) => {
         const areas = state.areas.filter((candidate) => candidate.id !== id)
+        const detailPages = pruneDetailPages({ areas, detailPages: state.detailPages })
         return {
           areas,
-          detailPages: pruneDetailPages({ areas, detailPages: state.detailPages }),
-          selectedAreaId: state.selectedAreaId === id ? null : state.selectedAreaId
+          detailPages,
+          selectedAreaId: state.selectedAreaId === id ? null : state.selectedAreaId,
+          ...reconcileDetailEditor(state.detailEditing, detailPages, areas)
         }
       })
     },
@@ -648,18 +674,29 @@ export function createAreaStore(initial?: Partial<AppState>): StoreApi<AreaStore
           return { detailPages: [...state.detailPages, { name, pageIndex }] }
         }
         if (!exists) return {}
+        const detailPages = state.detailPages.filter(
+          (dp) => !(dp.name === name && dp.pageIndex === pageIndex)
+        )
         return {
-          detailPages: state.detailPages.filter(
-            (dp) => !(dp.name === name && dp.pageIndex === pageIndex)
-          )
+          detailPages,
+          ...reconcileDetailEditor(state.detailEditing, detailPages, state.areas)
         }
       })
     },
     openDetailEditor(name, pageIndex) {
+      const state = get()
+      if (!detailEditorValid({ name, pageIndex }, state.detailPages, state.areas)) return
+      if (!state.detailEditing) {
+        detailReturnView = {
+          activePageIndex: state.activePageIndex,
+          zoom: state.zoom,
+          pan: state.pan
+        }
+      }
       set({ detailEditing: { name, pageIndex }, activePageIndex: pageIndex, selectedAreaId: null })
     },
     closeDetailEditor() {
-      set({ detailEditing: null })
+      set(closeDetailFields())
     },
     setDetailImage(name, pageIndex, image, transform) {
       set((state) => {
@@ -700,11 +737,13 @@ export function createAreaStore(initial?: Partial<AppState>): StoreApi<AreaStore
       if (!name) return
       set((state) => {
         const areas = state.areas.map((area) => (area.id === id ? { ...area, name } : area))
+        const detailPages = pruneDetailPages({ areas, detailPages: state.detailPages })
         return {
           areas,
-          detailPages: pruneDetailPages({ areas, detailPages: state.detailPages }),
+          detailPages,
           names: withName(state.names, name),
-          colors: withNameColor(state.colors, name)
+          colors: withNameColor(state.colors, name),
+          ...reconcileDetailEditor(state.detailEditing, detailPages, areas)
         }
       })
     },
@@ -749,6 +788,7 @@ export function createAreaStore(initial?: Partial<AppState>): StoreApi<AreaStore
     },
 
     setActivePage(i) {
+      if (get().detailEditing) return
       const max = Math.max(0, get().pages.length - 1)
       set({
         activePageIndex: Math.min(Math.max(i, 0), max),
@@ -973,7 +1013,7 @@ export function createAreaStore(initial?: Partial<AppState>): StoreApi<AreaStore
       }))
     },
     beginInteraction() {
-      interactionSnapshot = snapshot(get())
+      if (interactionSnapshot === null) interactionSnapshot = snapshot(get())
     },
     endInteraction() {
       if (interactionSnapshot === null) return
@@ -985,6 +1025,7 @@ export function createAreaStore(initial?: Partial<AppState>): StoreApi<AreaStore
       suppressHistory = false
     },
     undo() {
+      get().endInteraction()
       const s = get()
       if (s.undoStack.length === 0) return
       const current = snapshot(s)
@@ -996,18 +1037,20 @@ export function createAreaStore(initial?: Partial<AppState>): StoreApi<AreaStore
         redoStack: [...s.redoStack, current].slice(-HISTORY_LIMIT)
       })
       set((st) => {
-        const idx = st.pages.findIndex((p) => p.pageIndex === viewedSource)
+        const idx = st.pages.findIndex((page) => page.pageIndex === viewedSource)
         return {
           activePageIndex:
             idx >= 0 ? idx : Math.max(0, Math.min(st.activePageIndex, st.pages.length - 1)),
-          selectedAreaId: st.areas.some((a) => a.id === st.selectedAreaId)
+          selectedAreaId: st.areas.some((area) => area.id === st.selectedAreaId)
             ? st.selectedAreaId
-            : null
+            : null,
+          ...reconcileDetailEditor(st.detailEditing, st.detailPages, st.areas)
         }
       })
       suppressHistory = false
     },
     redo() {
+      get().endInteraction()
       const s = get()
       if (s.redoStack.length === 0) return
       const current = snapshot(s)
@@ -1019,13 +1062,14 @@ export function createAreaStore(initial?: Partial<AppState>): StoreApi<AreaStore
         undoStack: [...s.undoStack, current].slice(-HISTORY_LIMIT)
       })
       set((st) => {
-        const idx = st.pages.findIndex((p) => p.pageIndex === viewedSource)
+        const idx = st.pages.findIndex((page) => page.pageIndex === viewedSource)
         return {
           activePageIndex:
             idx >= 0 ? idx : Math.max(0, Math.min(st.activePageIndex, st.pages.length - 1)),
-          selectedAreaId: st.areas.some((a) => a.id === st.selectedAreaId)
+          selectedAreaId: st.areas.some((area) => area.id === st.selectedAreaId)
             ? st.selectedAreaId
-            : null
+            : null,
+          ...reconcileDetailEditor(st.detailEditing, st.detailPages, st.areas)
         }
       })
       suppressHistory = false

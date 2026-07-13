@@ -5,6 +5,7 @@ import { ModalDialog } from './components/ModalDialog'
 import { PdfStage } from './components/PdfStage'
 import { Sidebar } from './components/Sidebar'
 import { Toolbar } from './components/Toolbar'
+import { shouldUseNativeDetailPaste } from './components/detailView'
 import { t, useT } from './i18n'
 import { buildReportPdf } from './report/buildReport'
 import { renderReportPng } from './report/reportImage'
@@ -294,6 +295,7 @@ function App(): React.JSX.Element {
       if (shortcutsOpen || replaceOpen || renumberOpen) return
 
       const state = areaStore.getState()
+      if (shouldUseNativeDetailPaste(state.detailEditing != null, event)) return
 
       if (event.key === 'Escape' && holeTarget) {
         setHoleTarget(null)

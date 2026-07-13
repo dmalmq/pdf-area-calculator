@@ -59,7 +59,6 @@ export function InspectorPanel({
   const setStoreLabelMode = useAreaStore((s) => s.setStoreLabelMode)
   const mmPerPt = useAreaStore((s) => mmPerPtFor(s, s.pages[s.activePageIndex]?.pageIndex ?? 0))
   const detailPages = useAreaStore((s) => s.detailPages)
-  const setActivePage = useAreaStore((s) => s.setActivePage)
   const setDetailPageEnabled = useAreaStore((s) => s.setDetailPageEnabled)
   const openDetailEditor = useAreaStore((s) => s.openDetailEditor)
 
@@ -435,10 +434,7 @@ export function InspectorPanel({
                             <button
                               type="button"
                               className="btn btn--icon"
-                              onClick={() => {
-                                setActivePage(candidate.pageIndex)
-                                openDetailEditor(candidate.name, candidate.pageIndex)
-                              }}
+                              onClick={() => openDetailEditor(candidate.name, candidate.pageIndex)}
                             >
                               {t('detail.edit')}
                             </button>

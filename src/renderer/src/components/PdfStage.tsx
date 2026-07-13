@@ -3,7 +3,15 @@ import type { PageViewport } from 'pdfjs-dist'
 
 import { pointInArea, shoelacePt2 } from '../geometry/area'
 import { facilityDetailBBox } from '../geometry/detailFit'
-import { importImagePng } from '../utils/importImage'
+import {
+  detailPointerIntent,
+  mappedViewportRect,
+  shouldDrawDetailTag,
+  tryImportDetailImage,
+  viewportImageMetrics,
+  type ViewportTransform
+} from './detailView'
+import { DETAIL_IMAGE_OPACITY } from '../utils/detailPage'
 import {
   areaM2,
   areaStore,
@@ -324,6 +332,7 @@ export function PdfStage({
   )
   const [drag, setDrag] = useState<DragState | null>(null)
   const imageCache = useRef<Map<string, HTMLImageElement>>(new Map())
+  const imageErrors = useRef<Set<string>>(new Set())
   const [imageEpoch, setImageEpoch] = useState(0)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const wheelBatch = useRef<number | null>(null)
@@ -352,16 +361,25 @@ export function PdfStage({
   // HTMLImageElement decoded from raw base64, cached by the base64 string. Returns the
   // element once decoded (so the draw path can size it); a fresh element triggers one
   // redraw via imageEpoch when it finishes loading.
-  const getDetailImage = useCallback((base64: string): HTMLImageElement | null => {
-    const cache = imageCache.current
-    const existing = cache.get(base64)
-    if (existing) return existing.complete && existing.naturalWidth > 0 ? existing : null
-    const img = new Image()
-    img.onload = () => setImageEpoch((n) => n + 1)
-    img.src = `data:image/png;base64,${base64}`
-    cache.set(base64, img)
-    return null
-  }, [])
+  const getDetailImage = useCallback(
+    (base64: string): HTMLImageElement | null => {
+      if (imageErrors.current.has(base64)) return null
+      const cache = imageCache.current
+      const existing = cache.get(base64)
+      if (existing) return existing.complete && existing.naturalWidth > 0 ? existing : null
+      const img = new Image()
+      img.onload = () => setImageEpoch((n) => n + 1)
+      img.onerror = () => {
+        if (imageErrors.current.has(base64)) return
+        imageErrors.current.add(base64)
+        onToast(translateNow('toast.detail.imageFailed'))
+      }
+      img.src = `data:image/png;base64,${base64}`
+      cache.set(base64, img)
+      return null
+    },
+    [onToast]
+  )
 
   // Place a freshly imported image centered on the facility bbox, uniformly scaled to
   // fit it, rotation 0. `importImagePng` downscales oversized inputs and returns raw
@@ -371,7 +389,12 @@ export function PdfStage({
       if (!detailEditing) return
       const bbox = facilityDetailBBox(areas, detailEditing.name, detailEditing.pageIndex)
       if (!bbox) return
-      const { dataBase64, width, height } = await importImagePng(blob)
+      const imported = await tryImportDetailImage(blob)
+      if (!imported) {
+        onToast(translateNow('toast.detail.imageFailed'))
+        return
+      }
+      const { dataBase64, width, height } = imported
       const scale = Math.min(bbox.w / width, bbox.h / height)
       const cx = bbox.x + bbox.w / 2
       const cy = bbox.y + bbox.h / 2
@@ -382,7 +405,7 @@ export function PdfStage({
         rotation: 0
       })
     },
-    [areas, detailEditing, setDetailImage]
+    [areas, detailEditing, onToast, setDetailImage]
   )
 
   const onFileChosen = (event: React.ChangeEvent<HTMLInputElement>): void => {
@@ -490,7 +513,7 @@ export function PdfStage({
 
     ctx.clearRect(0, 0, canvas.width, canvas.height)
 
-    const drawPolygon = (area: Area, selected: boolean): void => {
+    const drawPolygon = (area: Area, selected: boolean, drawTag = true): void => {
       if (area.polygon.length < 2) return
       const color = colorForBusiness(state, area.name)
       const pts = area.polygon.map((pt) => viewportPt(viewport, pt))
@@ -515,8 +538,8 @@ export function PdfStage({
       ctx.lineWidth = selected ? 3 : 1.5
       ctx.stroke()
 
-      const rect = tagRect(area, ctx, viewport, state)
-      if (tagsVisible && rect) {
+      const rect = drawTag && tagsVisible ? tagRect(area, ctx, viewport, state) : null
+      if (rect) {
         ctx.font = `${TAG.weight} ${TAG.font}px ${REPORT_FONT_FAMILY}`
         ctx.textAlign = 'center'
         ctx.textBaseline = 'middle'
@@ -539,22 +562,26 @@ export function PdfStage({
       if (currentDetail?.image && currentDetail.transform) {
         const img = getDetailImage(currentDetail.image)
         if (img) {
-          const s = viewport.scale * currentDetail.transform.scale
+          const metrics = viewportImageMetrics(
+            viewport.transform as ViewportTransform,
+            currentDetail.transform.rotation,
+            currentDetail.transform.scale
+          )
           const cx =
             currentDetail.transform.x + (img.naturalWidth * currentDetail.transform.scale) / 2
           const cy =
             currentDetail.transform.y - (img.naturalHeight * currentDetail.transform.scale) / 2
           const center = viewportPt(viewport, { x: cx, y: cy })
           ctx.save()
-          ctx.globalAlpha = 0.9
+          ctx.globalAlpha = DETAIL_IMAGE_OPACITY
           ctx.translate(center.x, center.y)
-          ctx.rotate((currentDetail.transform.rotation * Math.PI) / 180)
+          ctx.rotate(metrics.angleRad)
           ctx.drawImage(
             img,
-            -(img.naturalWidth * s) / 2,
-            -(img.naturalHeight * s) / 2,
-            img.naturalWidth * s,
-            img.naturalHeight * s
+            -(img.naturalWidth * metrics.scale) / 2,
+            -(img.naturalHeight * metrics.scale) / 2,
+            img.naturalWidth * metrics.scale,
+            img.naturalHeight * metrics.scale
           )
           ctx.restore()
         }
@@ -563,7 +590,7 @@ export function PdfStage({
         .filter(
           (area) => area.pageIndex === detailEditing.pageIndex && area.name === detailEditing.name
         )
-        .forEach((area) => drawPolygon(area, false))
+        .forEach((area) => drawPolygon(area, false, shouldDrawDetailTag(area.kind)))
       return
     }
 
@@ -766,11 +793,7 @@ export function PdfStage({
     return () => flushWheelBatch()
   }, [detailEditing, flushWheelBatch])
 
-  const detailCamera = useRef<{
-    key: string
-    viewport: PageViewport
-    prev: { zoom: number; pan: Pt }
-  } | null>(null)
+  const detailCamera = useRef<{ key: string; viewport: PageViewport } | null>(null)
 
   useEffect(() => {
     const scroll = scrollRef.current
@@ -780,36 +803,29 @@ export function PdfStage({
       if (prior?.key === key && prior.viewport === viewport) return
       const bbox = facilityDetailBBox(areas, detailEditing.name, detailEditing.pageIndex)
       if (!bbox) return
-      detailCamera.current = { key, viewport, prev: prior?.prev ?? { zoom, pan } }
-      // Pad the union by 5% per side so outermost vertices don't touch the container edges.
-      const pad = {
+      detailCamera.current = { key, viewport }
+      const padded = {
         x: bbox.x - bbox.w * 0.05,
         y: bbox.y - bbox.h * 0.05,
         w: bbox.w * 1.1,
         h: bbox.h * 1.1
       }
-      // PDF points are bottom-left origin, viewport px are y-down: the rect's viewport
-      // top-left is the PDF point (x, y + h), its bottom-right is (x + w, y).
-      const tl = viewportPt(viewport, { x: pad.x, y: pad.y + pad.h })
-      const br = viewportPt(viewport, { x: pad.x + pad.w, y: pad.y })
+      const rect = mappedViewportRect(padded, viewport.transform as ViewportTransform)
       const framed = detailFrame({
-        rectX: tl.x,
-        rectY: tl.y,
-        rectW: br.x - tl.x,
-        rectH: br.y - tl.y,
+        rectX: rect.x,
+        rectY: rect.y,
+        rectW: rect.w,
+        rectH: rect.h,
         containerW: scroll.clientWidth,
         containerH: scroll.clientHeight,
         margin: STAGE_MARGIN
       })
       setZoom(framed.zoom)
       setPan(framed.pan)
-    } else if (!detailEditing && detailCamera.current) {
-      const { prev } = detailCamera.current
+    } else if (!detailEditing) {
       detailCamera.current = null
-      setZoom(prev.zoom)
-      setPan(prev.pan)
     }
-  }, [areas, detailEditing, pan, setPan, setZoom, viewport, zoom])
+  }, [areas, detailEditing, setPan, setZoom, viewport])
 
   const findAreaAt = (pt: Pt): Area | null => {
     for (let i = pageAreas.length - 1; i >= 0; i -= 1) {
@@ -883,8 +899,7 @@ export function PdfStage({
 
     const canvas = overlayRef.current
     canvas.setPointerCapture(event.pointerId)
-
-    if (shouldPanPointer(event.button, tool)) {
+    const startPanDrag = (): void => {
       event.preventDefault()
       const scroll = scrollRef.current
       setDrag({
@@ -893,44 +908,52 @@ export function PdfStage({
         startPan: { x: scroll?.scrollLeft ?? pan.x, y: scroll?.scrollTop ?? pan.y },
         moved: false
       })
-      return
     }
 
     const pdfPt = eventToPdfPt(event.nativeEvent, canvas, viewport)
     const viewportPoint = eventToViewportPt(event.nativeEvent, canvas)
     if (detailEditing) {
-      if (currentDetail?.image && currentDetail.transform) {
-        const img = getDetailImage(currentDetail.image)
-        if (img) {
-          const s = viewport.scale * currentDetail.transform.scale
-          const cx =
-            currentDetail.transform.x + (img.naturalWidth * currentDetail.transform.scale) / 2
-          const cy =
-            currentDetail.transform.y - (img.naturalHeight * currentDetail.transform.scale) / 2
-          const center = viewportPt(viewport, { x: cx, y: cy })
-          const local = inverseImagePoint(
-            viewportPoint,
-            center,
-            s,
-            (currentDetail.transform.rotation * Math.PI) / 180,
-            img.naturalWidth,
-            img.naturalHeight
-          )
-          if (pointInImageRect(local, img.naturalWidth, img.naturalHeight)) {
-            flushWheelBatch()
-            beginInteraction()
-            setDrag({
-              kind: 'detailImage',
-              startClient: { x: event.clientX, y: event.clientY },
-              startPan: pan,
-              startPt: pdfPt,
-              startTransform: currentDetail.transform,
-              moved: false
-            })
-            return
-          }
-        }
+      const transform = currentDetail?.transform
+      const img = currentDetail?.image ? getDetailImage(currentDetail.image) : null
+      let imageHit = false
+      if (img && transform && event.button === 0) {
+        const metrics = viewportImageMetrics(
+          viewport.transform as ViewportTransform,
+          transform.rotation,
+          transform.scale
+        )
+        const cx = transform.x + (img.naturalWidth * transform.scale) / 2
+        const cy = transform.y - (img.naturalHeight * transform.scale) / 2
+        const center = viewportPt(viewport, { x: cx, y: cy })
+        const local = inverseImagePoint(
+          viewportPoint,
+          center,
+          metrics.scale,
+          metrics.angleRad,
+          img.naturalWidth,
+          img.naturalHeight
+        )
+        imageHit = pointInImageRect(local, img.naturalWidth, img.naturalHeight)
       }
+      const intent = detailPointerIntent(true, event.button, tool, imageHit)
+      if (intent === 'detailImage' && transform) {
+        flushWheelBatch()
+        beginInteraction()
+        setDrag({
+          kind: 'detailImage',
+          startClient: { x: event.clientX, y: event.clientY },
+          startPan: pan,
+          startPt: pdfPt,
+          startTransform: transform,
+          moved: false
+        })
+      } else if (intent === 'pan') {
+        startPanDrag()
+      }
+      return
+    }
+    if (detailPointerIntent(false, event.button, tool, false) === 'pan') {
+      startPanDrag()
       return
     }
     if (holeTarget) {
@@ -1176,8 +1199,8 @@ export function PdfStage({
       event.preventDefault()
       if (!currentDetail?.transform || !viewport || !overlayRef.current) return
       const beginBatch = (): void => {
-        if (wheelBatch.current == null) beginInteraction()
-        else window.clearTimeout(wheelBatch.current)
+        beginInteraction()
+        if (wheelBatch.current != null) window.clearTimeout(wheelBatch.current)
         wheelBatch.current = window.setTimeout(() => {
           endInteraction()
           wheelBatch.current = null

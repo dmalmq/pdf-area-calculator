@@ -7,6 +7,7 @@ import {
   type PDFPage,
   type RGB
 } from 'pdf-lib'
+import { DETAIL_IMAGE_OPACITY } from '../utils/detailPage'
 
 import type {
   Area,
@@ -231,7 +232,14 @@ async function drawDetailPages(
       const hh = h / 2
       const ax = center.x - (hw * Math.cos(rad) - hh * Math.sin(rad))
       const ay = center.y - (hw * Math.sin(rad) + hh * Math.cos(rad))
-      page.drawImage(embed, { x: ax, y: ay, width: w, height: h, rotate: degrees(phi) })
+      page.drawImage(embed, {
+        x: ax,
+        y: ay,
+        width: w,
+        height: h,
+        rotate: degrees(phi),
+        opacity: DETAIL_IMAGE_OPACITY
+      })
     }
 
     // 2) Facility + store overlays for this facility/page, mapped through the fit.

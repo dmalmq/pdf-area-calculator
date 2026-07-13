@@ -1,4 +1,4 @@
-import { PDFArray, PDFDocument, PDFName, PDFRawStream } from 'pdf-lib'
+import { PDFArray, PDFDocument, PDFName, PDFPage, PDFRawStream } from 'pdf-lib'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Area, DetailPage } from '../state/types'
 
@@ -233,7 +233,10 @@ describe('buildReportPdf page order', () => {
 })
 
 describe('buildReportPdf detail pages', () => {
-  afterEach(() => vi.unstubAllGlobals())
+  afterEach(() => {
+    vi.restoreAllMocks()
+    vi.unstubAllGlobals()
+  })
 
   it('inserts detail pages between the originals and the summary, preserving input order', async () => {
     stubHeaderCanvas()
@@ -404,6 +407,29 @@ describe('buildReportPdf detail pages', () => {
 
     // The embedded background adds content the vector-only page lacks.
     expect(img.length).toBeGreaterThan(noImg.length)
+  })
+
+  it('draws the detail background with the shared preview opacity', async () => {
+    stubHeaderCanvas()
+    const drawImage = vi.spyOn(PDFPage.prototype, 'drawImage')
+    const source = await PDFDocument.create()
+    source.addPage([400, 400])
+    const detail = {
+      pages: [
+        {
+          name: 'エスパル仙台本館',
+          pageIndex: 0,
+          image: onePixelBase64,
+          transform: { x: 20, y: 100, scale: 2, rotation: 0 }
+        }
+      ] as DetailPage[],
+      areas: [wideFacility],
+      pageLabels: ['1F']
+    }
+
+    await buildReportPdf(await source.save(), onePixelPng, [], {}, undefined, undefined, detail)
+
+    expect(drawImage.mock.calls.some(([, options]) => options?.opacity === 0.9)).toBe(true)
   })
 
   it('centers the padded facility bbox in the content area (detailFit contract)', () => {

@@ -958,6 +958,45 @@ describe('report ordering', () => {
   })
 })
 
+describe('interaction history boundaries', () => {
+  it('finalizes an open interaction before undo and ignores a late endInteraction', () => {
+    const t0 = { x: 0, y: 0, scale: 1, rotation: 0 }
+    const t1 = { x: 4, y: 5, scale: 2, rotation: 10 }
+    const store = createAreaStore({
+      detailPages: [{ name: 'A', pageIndex: 0, image: 'PNG', transform: t0 }]
+    })
+
+    store.getState().beginInteraction()
+    store.getState().setDetailTransform('A', 0, t1)
+    store.getState().undo()
+
+    expect(store.getState().detailPages[0].transform).toEqual(t0)
+    expect(store.getState().redoStack).toHaveLength(1)
+    store.getState().endInteraction()
+    expect(store.getState().detailPages[0].transform).toEqual(t0)
+    expect(store.getState().redoStack).toHaveLength(1)
+
+    store.getState().redo()
+    expect(store.getState().detailPages[0].transform).toEqual(t1)
+  })
+
+  it('keeps the first snapshot when a gesture calls beginInteraction repeatedly', () => {
+    const t0 = { x: 0, y: 0, scale: 1, rotation: 0 }
+    const t1 = { x: 4, y: 5, scale: 2, rotation: 10 }
+    const t2 = { x: 8, y: 9, scale: 3, rotation: 20 }
+    const store = createAreaStore({
+      detailPages: [{ name: 'A', pageIndex: 0, image: 'PNG', transform: t0 }]
+    })
+    store.getState().beginInteraction()
+    store.getState().setDetailTransform('A', 0, t1)
+    store.getState().beginInteraction()
+    store.getState().setDetailTransform('A', 0, t2)
+    store.getState().endInteraction()
+    store.getState().undo()
+    expect(store.getState().detailPages[0].transform).toEqual(t0)
+  })
+})
+
 describe('detail pages persistence', () => {
   const detail: DetailPage = {
     name: 'A',
@@ -1121,6 +1160,52 @@ describe('detailCandidates and enable/disable', () => {
   })
 })
 
+describe('detail editor reconciliation', () => {
+  it('closes the editor when its detail page is disabled', () => {
+    const store = createAreaStore({
+      pages,
+      areas: [square(0, 'A')],
+      detailPages: [{ name: 'A', pageIndex: 0 }]
+    })
+    store.getState().openDetailEditor('A', 0)
+    store.getState().setDetailPageEnabled('A', 0, false)
+    expect(store.getState().detailEditing).toBeNull()
+  })
+
+  it('closes the editor when deleting its last source polygon prunes the page', () => {
+    const area = square(0, 'A')
+    const store = createAreaStore({
+      pages,
+      areas: [area],
+      detailPages: [{ name: 'A', pageIndex: 0 }]
+    })
+    store.getState().openDetailEditor('A', 0)
+    store.getState().deleteArea(area.id)
+    expect(store.getState().detailEditing).toBeNull()
+  })
+
+  it('closes the editor when renaming its last source polygon prunes the page', () => {
+    const area = square(0, 'A')
+    const store = createAreaStore({
+      pages,
+      areas: [area],
+      detailPages: [{ name: 'A', pageIndex: 0 }]
+    })
+    store.getState().openDetailEditor('A', 0)
+    store.getState().renameArea(area.id, 'B')
+    expect(store.getState().detailEditing).toBeNull()
+  })
+
+  it('closes the editor when undo removes its detail page', () => {
+    const store = createAreaStore({ pages, names: ['A'], areas: [square(0, 'A')] })
+    store.getState().setDetailPageEnabled('A', 0, true)
+    store.getState().openDetailEditor('A', 0)
+    store.getState().undo()
+    expect(store.getState().detailPages).toEqual([])
+    expect(store.getState().detailEditing).toBeNull()
+  })
+})
+
 describe('detail editor and image actions', () => {
   const t0 = { x: 0, y: 0, scale: 1, rotation: 0 }
   const t1 = { x: 10, y: 20, scale: 2, rotation: 0 }
@@ -1156,6 +1241,53 @@ describe('detail editor and image actions', () => {
     store.getState().openDetailEditor('A', 0)
     store.getState().closeDetailEditor()
     expect(store.getState().undoStack).toHaveLength(0)
+  })
+
+  it('restores the exact page and camera that preceded a cross-page editor session', () => {
+    const store = createAreaStore({
+      pages,
+      areas: [square(1, 'A')],
+      detailPages: [{ name: 'A', pageIndex: 1 }],
+      activePageIndex: 0,
+      zoom: 1.75,
+      pan: { x: 31, y: 47 }
+    })
+    store.getState().openDetailEditor('A', 1)
+    store.getState().setZoom(2.5)
+    store.getState().setPan({ x: 100, y: 120 })
+    store.getState().closeDetailEditor()
+    expect(store.getState().activePageIndex).toBe(0)
+    expect(store.getState().zoom).toBe(1.75)
+    expect(store.getState().pan).toEqual({ x: 31, y: 47 })
+  })
+
+  it('restores a nonzero same-page camera after editor close', () => {
+    const store = createAreaStore({
+      pages,
+      areas: [square(0, 'A')],
+      detailPages: [{ name: 'A', pageIndex: 0 }],
+      activePageIndex: 0,
+      zoom: 1.25,
+      pan: { x: 12, y: 18 }
+    })
+    store.getState().openDetailEditor('A', 0)
+    store.getState().setZoom(2)
+    store.getState().setPan({ x: 80, y: 90 })
+    store.getState().closeDetailEditor()
+    expect(store.getState().activePageIndex).toBe(0)
+    expect(store.getState().zoom).toBe(1.25)
+    expect(store.getState().pan).toEqual({ x: 12, y: 18 })
+  })
+
+  it('ignores page navigation while the editor is open', () => {
+    const store = createAreaStore({
+      pages,
+      areas: [square(1, 'A')],
+      detailPages: [{ name: 'A', pageIndex: 1 }]
+    })
+    store.getState().openDetailEditor('A', 1)
+    store.getState().setActivePage(0)
+    expect(store.getState().activePageIndex).toBe(1)
   })
 
   it('attaches an image and transform to the enabled page', () => {
