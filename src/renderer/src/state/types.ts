@@ -91,6 +91,7 @@ export interface DetailPage {
   pageIndex: number // source page (level)
   image?: string // PNG, raw base64 (no data: prefix)
   transform?: DetailTransform // absent until an image is placed
+  summaryPosition?: Pt // optional top-left of movable summary overlay
 }
 
 export interface ProjectFile {

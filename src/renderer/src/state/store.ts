@@ -38,6 +38,7 @@ export interface AreaStore extends AppState {
   setDetailPageEnabled(name: string, pageIndex: number, enabled: boolean): void
   setDetailImage(name: string, pageIndex: number, image: string, transform: DetailTransform): void
   setDetailTransform(name: string, pageIndex: number, transform: DetailTransform): void
+  setDetailSummaryPosition(name: string, pageIndex: number, position: Pt): void
   removeDetailImage(name: string, pageIndex: number): void
   openDetailEditor(name: string, pageIndex: number): void
   closeDetailEditor(): void
@@ -777,11 +778,24 @@ export function createAreaStore(initial?: Partial<AppState>): StoreApi<AreaStore
         )
       }))
     },
+    setDetailSummaryPosition(name, pageIndex, position) {
+      set((state) => ({
+        detailPages: state.detailPages.map((detailPage) =>
+          detailPage.name === name && detailPage.pageIndex === pageIndex
+            ? { ...detailPage, summaryPosition: position }
+            : detailPage
+        )
+      }))
+    },
     removeDetailImage(name, pageIndex) {
       set((state) => ({
         detailPages: state.detailPages.map((dp) =>
           dp.name === name && dp.pageIndex === pageIndex
-            ? { name: dp.name, pageIndex: dp.pageIndex }
+            ? {
+                name: dp.name,
+                pageIndex: dp.pageIndex,
+                ...(dp.summaryPosition != null ? { summaryPosition: dp.summaryPosition } : {})
+              }
             : dp
         )
       }))

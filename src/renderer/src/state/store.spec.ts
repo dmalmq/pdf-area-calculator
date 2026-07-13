@@ -1064,6 +1064,43 @@ describe('detail pages persistence', () => {
     expect(store.getState().detailPages).toEqual([])
     expect(store.getState().detailEditing).toBeNull()
   })
+
+  it('stores, serializes, and restores a detail summary position', () => {
+    const store = createAreaStore({ detailPages: [{ name: 'A', pageIndex: 0 }] })
+    store.getState().setDetailSummaryPosition('A', 0, { x: 25, y: 80 })
+
+    expect(store.getState().detailPages[0].summaryPosition).toEqual({ x: 25, y: 80 })
+    expect(toProjectFile(store.getState()).detailPages?.[0].summaryPosition).toEqual({ x: 25, y: 80 })
+
+    const reopened = createAreaStore()
+    reopened.getState().importProject(toProjectFile(store.getState()))
+    expect(reopened.getState().detailPages[0].summaryPosition).toEqual({ x: 25, y: 80 })
+  })
+
+  it('undoes one batched summary drag as one history entry', () => {
+    const store = createAreaStore({ detailPages: [{ name: 'A', pageIndex: 0 }] })
+    store.getState().beginInteraction()
+    store.getState().setDetailSummaryPosition('A', 0, { x: 10, y: 20 })
+    store.getState().setDetailSummaryPosition('A', 0, { x: 30, y: 40 })
+    store.getState().endInteraction()
+
+    expect(store.getState().undoStack).toHaveLength(1)
+    store.getState().undo()
+    expect(store.getState().detailPages[0].summaryPosition).toBeUndefined()
+  })
+
+  it('keeps version 3 projects without a summary position valid', () => {
+    const store = createAreaStore()
+    store.getState().importProject({
+      version: 3,
+      fileName: null,
+      pages,
+      names: ['A'],
+      areas: [],
+      detailPages: [{ name: 'A', pageIndex: 0 }]
+    })
+    expect(store.getState().detailPages[0].summaryPosition).toBeUndefined()
+  })
 })
 
 describe('detailCandidates and enable/disable', () => {
@@ -1400,5 +1437,23 @@ describe('detail editor and image actions', () => {
     })
     store.getState().removeDetailImage('A', 0)
     expect(store.getState().detailPages).toEqual([{ name: 'A', pageIndex: 0 }])
+  })
+
+  it('removes the image but preserves a saved summary position', () => {
+    const store = createAreaStore({
+      detailPages: [
+        {
+          name: 'A',
+          pageIndex: 0,
+          image: 'PNG',
+          transform: t1,
+          summaryPosition: { x: 25, y: 80 }
+        }
+      ]
+    })
+    store.getState().removeDetailImage('A', 0)
+    expect(store.getState().detailPages).toEqual([
+      { name: 'A', pageIndex: 0, summaryPosition: { x: 25, y: 80 } }
+    ])
   })
 })
