@@ -10,7 +10,7 @@ import {
 const bbox = { x: 100, y: 200, w: 400, h: 200 }
 
 const pages = [
-  { pageIndex: 7, label: 'B1F', scale: { kind: 'custom', mmPerPt: 1000 } },
+  { pageIndex: 7, label: 'B1F', scale: { kind: 'custom' as const, mmPerPt: 1000 } },
   { pageIndex: 8, label: '2F', scale: null }
 ]
 

@@ -1,9 +1,22 @@
-import { useMemo, useState } from 'react'
+import { useId, useMemo, useState } from 'react'
 
 import { useT } from '../i18n'
 import { areaM2, detailCandidates, mmPerPtFor, useAreaStore } from '../state/store'
+import type { DetailCandidate } from '../state/store'
 import { areaNetPt2 } from '../geometry/area'
 import type { Pt } from '../state/types'
+
+export function groupDetailCandidates(
+  candidates: DetailCandidate[]
+): Array<{ name: string; rows: DetailCandidate[] }> {
+  const groups = new Map<string, DetailCandidate[]>()
+  for (const candidate of candidates) {
+    const rows = groups.get(candidate.name)
+    if (rows) rows.push(candidate)
+    else groups.set(candidate.name, [candidate])
+  }
+  return [...groups].map(([name, rows]) => ({ name, rows }))
+}
 
 interface InspectorPanelProps {
   calibrationDraft: Pt[]
@@ -77,6 +90,9 @@ export function InspectorPanel({
   const tab: InspectorTab = selected ? (userTab ?? 'selection') : 'page'
   const custom = customEdited ?? (mmPerPt != null ? String(Number(mmPerPt.toFixed(6))) : '')
   const candidates = useMemo(() => detailCandidates({ areas, names, pages }), [areas, names, pages])
+  const detailGroups = useMemo(() => groupDetailCandidates(candidates), [candidates])
+  const enabledDetailCount = detailPages.length
+  const detailGroupIdPrefix = useId()
 
   const calibrationReady = calibrationDraft.length === 2 && Number(realMeters) > 0
   const calibrationDistance =
@@ -402,47 +418,82 @@ export function InspectorPanel({
                 </button>
               </div>
               <details className="disclosure">
-                <summary>{t('detail.heading')}</summary>
+                <summary>
+                  <span>{t('detail.heading')}</span>
+                  {enabledDetailCount > 0 ? (
+                    <span className="disclosure__meta">
+                      {t('detail.enabled', { n: enabledDetailCount })}
+                    </span>
+                  ) : null}
+                </summary>
                 {candidates.length === 0 ? (
                   <p className="hint">{t('detail.empty')}</p>
                 ) : (
-                  <ul className="detail-list">
-                    {candidates.map((candidate) => {
-                      const enabled = detailPages.some(
-                        (dp) => dp.name === candidate.name && dp.pageIndex === candidate.pageIndex
-                      )
+                  <div className="detail-groups">
+                    {detailGroups.map((group, groupIndex) => {
+                      const groupHeadingId = `${detailGroupIdPrefix}-g${groupIndex}`
                       return (
-                        <li key={`${candidate.name}@${candidate.pageIndex}`} className="detail-row">
-                          <label className="detail-row__label">
-                            <input
-                              type="checkbox"
-                              checked={enabled}
-                              onChange={(event) =>
-                                setDetailPageEnabled(
-                                  candidate.name,
-                                  candidate.pageIndex,
-                                  event.target.checked
-                                )
-                              }
-                            />
-                            <span className="detail-row__name">{candidate.name}</span>
-                            <span className="detail-row__meta">
-                              {candidate.level} · {t('detail.stores', { n: candidate.stores })}
-                            </span>
-                          </label>
-                          {enabled ? (
-                            <button
-                              type="button"
-                              className="btn btn--icon"
-                              onClick={() => openDetailEditor(candidate.name, candidate.pageIndex)}
-                            >
-                              {t('detail.edit')}
-                            </button>
-                          ) : null}
-                        </li>
+                        <section
+                          key={group.name}
+                          className="detail-group"
+                          aria-labelledby={groupHeadingId}
+                        >
+                          <h4 id={groupHeadingId} className="detail-group__name">
+                            {group.name}
+                          </h4>
+                          <ul className="detail-list">
+                            {group.rows.map((candidate) => {
+                              const enabled = detailPages.some(
+                                (detailPage) =>
+                                  detailPage.name === candidate.name &&
+                                  detailPage.pageIndex === candidate.pageIndex
+                              )
+                              return (
+                                <li
+                                  key={`${candidate.name}@${candidate.pageIndex}`}
+                                  className="detail-row"
+                                >
+                                  <label className="detail-row__label">
+                                    <input
+                                      type="checkbox"
+                                      checked={enabled}
+                                      aria-label={t('detail.toggleLabel', {
+                                        name: candidate.name,
+                                        level: candidate.level,
+                                        stores: candidate.stores
+                                      })}
+                                      onChange={(event) =>
+                                        setDetailPageEnabled(
+                                          candidate.name,
+                                          candidate.pageIndex,
+                                          event.target.checked
+                                        )
+                                      }
+                                    />
+                                    <span className="detail-row__text">
+                                      <strong>{candidate.level}</strong>
+                                      <small>{t('detail.stores', { n: candidate.stores })}</small>
+                                    </span>
+                                  </label>
+                                  {enabled ? (
+                                    <button
+                                      type="button"
+                                      className="btn"
+                                      onClick={() =>
+                                        openDetailEditor(candidate.name, candidate.pageIndex)
+                                      }
+                                    >
+                                      {t('detail.edit')}
+                                    </button>
+                                  ) : null}
+                                </li>
+                              )
+                            })}
+                          </ul>
+                        </section>
                       )
                     })}
-                  </ul>
+                  </div>
                 )}
               </details>
             </>

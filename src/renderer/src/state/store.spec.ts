@@ -1092,7 +1092,6 @@ describe('detail pages persistence', () => {
   it('keeps version 3 projects without a summary position valid', () => {
     const store = createAreaStore()
     store.getState().importProject({
-      version: 3,
       fileName: null,
       pages,
       names: ['A'],
