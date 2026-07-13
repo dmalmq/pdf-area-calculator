@@ -1237,7 +1237,11 @@ describe('detail editor and image actions', () => {
   })
 
   it('opening and closing the editor does not push undo history', () => {
-    const store = createAreaStore({ detailPages: [{ name: 'A', pageIndex: 0 }] })
+    const store = createAreaStore({
+      pages,
+      areas: [square(0, 'A')],
+      detailPages: [{ name: 'A', pageIndex: 0 }]
+    })
     store.getState().openDetailEditor('A', 0)
     store.getState().closeDetailEditor()
     expect(store.getState().undoStack).toHaveLength(0)
