@@ -439,7 +439,7 @@ describe('buildReportPdf detail pages', () => {
       pageLabels: ['1F']
     }
 
-    await buildReportPdf(await source.save(), onePixelPng, [], {}, undefined, undefined, detail)
+    await buildReportPdf(await source.save(), onePixelPng, [], {}, undefined, undefined, [], detail)
 
     expect(drawImage.mock.calls.some(([, options]) => options?.opacity === 0.9)).toBe(true)
   })
