@@ -200,6 +200,10 @@ function App(): React.JSX.Element {
     try {
       const title = `面積集計 — ${state.fileName ?? 'PDF'}`
       const png = await renderReportPng(state, title)
+      const detailPages = [...state.detailPages].sort(
+        (a, b) =>
+          state.names.indexOf(a.name) - state.names.indexOf(b.name) || a.pageIndex - b.pageIndex
+      )
       const pdf = await buildReportPdf(
         state.originalBytes,
         png,
@@ -213,7 +217,15 @@ function App(): React.JSX.Element {
           scale: state.legendScale
         },
         { mode: state.storeLabelMode, prefixes: state.prefixes },
-        state.pages.map((p) => p.pageIndex)
+        state.pages.map((page) => page.pageIndex),
+        {
+          pages: detailPages,
+          areas: state.areas,
+          pageLabels: state.pages.reduce<string[]>((labels, page) => {
+            labels[page.pageIndex] = page.label
+            return labels
+          }, [])
+        }
       )
       const defaultName = `${withoutExt(state.fileName ?? 'pdf')}_areas.pdf`
       const saved = await window.api.savePdf(pdf, defaultName)
