@@ -5,7 +5,11 @@ import { pointInArea, shoelacePt2 } from '../geometry/area'
 import { facilityDetailBBox } from '../geometry/detailFit'
 import {
   detailPointerIntent,
+  detailFrame,
+  inverseImagePoint,
   mappedViewportRect,
+  pointInImageRect,
+  scaleDetailAboutCursor,
   shouldDrawDetailTag,
   tryImportDetailImage,
   viewportImageMetrics,
@@ -193,78 +197,6 @@ export function anchoredZoomScroll(input: AnchoredZoomInput): Pt {
   return {
     x: ((input.scrollLeft + input.localX) / input.zoom) * input.nextZoom - input.localX,
     y: ((input.scrollTop + input.localY) / input.zoom) * input.nextZoom - input.localY
-  }
-}
-
-// Frame a viewport-px rectangle to fill the scroll container: uniform fit + centering,
-// expressed as the store's zoom/pan (scroll offset). Clamped to the stage zoom range.
-export function detailFrame(input: {
-  rectX: number
-  rectY: number
-  rectW: number
-  rectH: number
-  containerW: number
-  containerH: number
-  margin: number
-}): { zoom: number; pan: Pt } {
-  const fit = Math.min(input.containerW / input.rectW, input.containerH / input.rectH)
-  const zoom = Math.min(Math.max(fit, 0.2), 8)
-  return {
-    zoom,
-    pan: {
-      x: input.margin + input.rectX * zoom - (input.containerW - input.rectW * zoom) / 2,
-      y: input.margin + input.rectY * zoom - (input.containerH - input.rectH * zoom) / 2
-    }
-  }
-}
-
-// Inverse-transform a viewport-px point into image-local pixels: subtract the image
-// center, un-rotate by the transform rotation, divide by the viewport-px-per-image-px
-// scale, then recenter to top-left origin. Mirror of the draw transform in the effect.
-export function inverseImagePoint(
-  pt: Pt,
-  center: Pt,
-  s: number,
-  rotationRad: number,
-  imgW: number,
-  imgH: number
-): Pt {
-  const dx = pt.x - center.x
-  const dy = pt.y - center.y
-  const cos = Math.cos(-rotationRad)
-  const sin = Math.sin(-rotationRad)
-  return {
-    x: (dx * cos - dy * sin) / s + imgW / 2,
-    y: (dx * sin + dy * cos) / s + imgH / 2
-  }
-}
-
-// True when an image-local point (px, top-left origin) lands on the image rectangle.
-export function pointInImageRect(local: Pt, imgW: number, imgH: number): boolean {
-  return local.x >= 0 && local.x <= imgW && local.y >= 0 && local.y <= imgH
-}
-
-// Scale the transform about a cursor PDF point, keeping the cursor's image-local point
-// fixed. Uniform scaling commutes with rotation, so the center simply moves toward/away
-// from the cursor by the scale ratio; new top-left is derived from the new center.
-export function scaleDetailAboutCursor(
-  t: DetailTransform,
-  imgW: number,
-  imgH: number,
-  cursor: Pt,
-  factor: number
-): DetailTransform {
-  const nextScale = t.scale * factor
-  const cx = t.x + (imgW * t.scale) / 2
-  const cy = t.y - (imgH * t.scale) / 2
-  const ratio = nextScale / t.scale
-  const ncx = cursor.x - (cursor.x - cx) * ratio
-  const ncy = cursor.y - (cursor.y - cy) * ratio
-  return {
-    x: ncx - (imgW * nextScale) / 2,
-    y: ncy + (imgH * nextScale) / 2,
-    scale: nextScale,
-    rotation: t.rotation
   }
 }
 

@@ -12,12 +12,24 @@ function setupCanvas(): { drawnText: string[] } {
     strokeRect: vi.fn(),
     fillText: vi.fn((text: string) => drawnText.push(text)),
     measureText: vi.fn((text: string) => ({ width: text.length * 8 })),
-    set fillStyle(_v: string) {},
-    set strokeStyle(_v: string) {},
-    set font(_v: string) {},
-    set textAlign(_v: string) {},
-    set textBaseline(_v: string) {},
-    set lineWidth(_v: number) {}
+    set fillStyle(value: string) {
+      void value
+    },
+    set strokeStyle(value: string) {
+      void value
+    },
+    set font(value: string) {
+      void value
+    },
+    set textAlign(value: string) {
+      void value
+    },
+    set textBaseline(value: string) {
+      void value
+    },
+    set lineWidth(value: number) {
+      void value
+    }
   }
   const canvas = {
     width: 0,

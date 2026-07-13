@@ -1,15 +1,18 @@
-import { inverseImagePoint, pointInImageRect, scaleDetailAboutCursor } from './PdfStage'
-
 import { describe, expect, it } from 'vitest'
 
 import {
   anchoredZoomScroll,
   constrainDelta,
-  detailFrame,
   doubleClickAction,
   shouldPanPointer,
   tagBoxSize
 } from './PdfStage'
+import {
+  detailFrame,
+  inverseImagePoint,
+  pointInImageRect,
+  scaleDetailAboutCursor
+} from './detailView'
 
 describe('PdfStage interaction helpers', () => {
   it('uses middle mouse as pan without treating it as a drawing click', () => {
