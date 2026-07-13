@@ -1068,6 +1068,12 @@ details.disclosure > summary {
   min-width: 0;
 }
 
+.detail-row__text strong,
+.detail-row__text small {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .detail-row__text small,
 .disclosure__meta {
   color: var(--muted);

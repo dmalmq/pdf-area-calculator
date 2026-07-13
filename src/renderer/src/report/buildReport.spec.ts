@@ -8,9 +8,8 @@ import { buildReportPdf } from './buildReport'
 import * as detailFitModule from '../geometry/detailFit'
 import { detailFit, facilityDetailBBox } from '../geometry/detailFit'
 import {
-  clampDetailSummaryPosition,
   defaultDetailSummaryPosition,
-  paddedDetailBounds
+  resolveDetailSummaryPosition
 } from '../utils/detailSummary'
 import { inflateSync } from 'node:zlib'
 import * as detailHeader from './detailHeader'
@@ -138,15 +137,7 @@ function expectedSummaryDraw(
     y: contentY + (p.y - (bbox.y - padY)) * fit.scale + fit.offsetY
   })
   const sourcePosition = summaryPosition ?? defaultDetailSummaryPosition(bbox)
-  const sourceSize = {
-    w: summarySize.width / fit.scale,
-    h: summarySize.height / fit.scale
-  }
-  const clamped = clampDetailSummaryPosition(
-    sourcePosition,
-    paddedDetailBounds(bbox),
-    sourceSize
-  )
+  const clamped = resolveDetailSummaryPosition(sourcePosition, bbox)
   const mappedTopLeft = mapPt(clamped)
   return {
     x: mappedTopLeft.x,

@@ -1,5 +1,5 @@
-import type { BBox } from '../geometry/detailFit'
-import { reportByFacilityLevel } from '../state/store'
+import { detailFit, type BBox } from '../geometry/detailFit'
+import { mmPerPtFor, reportByFacilityLevel } from '../state/store'
 import type { AppState, Pt } from '../state/types'
 
 export interface DetailSummaryMetrics {
@@ -8,6 +8,19 @@ export interface DetailSummaryMetrics {
   areaM2: number | null
   stores: number
 }
+
+/** Matches buildReport detail page margin (PDF points). */
+export const DETAIL_PAGE_MARGIN = 28
+const A4_SHORT = 595.28
+const A4_LONG = 841.89
+
+/**
+ * Deterministic summary card size in output points (1 CSS px = 1 PDF pt when embedded).
+ * Matches detailHeader MIN_WIDTH and single-line height:
+ * PAD_Y*2 + name + TABLE_GAP + label row + value row = 20 + 19 + 8 + 19 + 19 = 85.
+ * Editor and export both clamp with this contract so edge anchors round-trip.
+ */
+export const DETAIL_SUMMARY_CLAMP_OUTPUT = { w: 280, h: 85 } as const
 
 export function paddedDetailBounds(bbox: BBox): BBox {
   const padX = bbox.w * 0.05
@@ -41,12 +54,49 @@ export function clampDetailSummaryPosition(
   }
 }
 
+/** A4 content box used by detail export for the given facility bbox orientation. */
+export function detailPageContentSize(bbox: BBox): { width: number; height: number } {
+  const landscape = bbox.w > bbox.h
+  const pageW = landscape ? A4_LONG : A4_SHORT
+  const pageH = landscape ? A4_SHORT : A4_LONG
+  return {
+    width: pageW - DETAIL_PAGE_MARGIN * 2,
+    height: pageH - DETAIL_PAGE_MARGIN * 2
+  }
+}
+
+/** Source-space footprint of a summary card: output points ÷ detailFit scale. */
+export function detailSummarySourceFootprint(
+  bbox: BBox,
+  outputSize: { w: number; h: number } = DETAIL_SUMMARY_CLAMP_OUTPUT
+): { w: number; h: number } {
+  const fit = detailFit(bbox, detailPageContentSize(bbox))
+  return { w: outputSize.w / fit.scale, h: outputSize.h / fit.scale }
+}
+
+/**
+ * Shared editor+export clamp: default anchor when unset, then clamp with the
+ * deterministic source footprint so a saved edge position is not re-clamped later.
+ */
+export function resolveDetailSummaryPosition(
+  position: Pt | undefined,
+  bbox: BBox,
+  outputSize: { w: number; h: number } = DETAIL_SUMMARY_CLAMP_OUTPUT
+): Pt {
+  return clampDetailSummaryPosition(
+    position ?? defaultDetailSummaryPosition(bbox),
+    paddedDetailBounds(bbox),
+    detailSummarySourceFootprint(bbox, outputSize)
+  )
+}
+
 export function detailSummaryMetrics(
   state: Pick<AppState, 'areas' | 'pages'>,
   name: string,
   pageIndex: number
 ): DetailSummaryMetrics | null {
-  const level = state.pages.find((page) => page.pageIndex === pageIndex)?.label
+  const page = state.pages.find((candidate) => candidate.pageIndex === pageIndex)
+  const level = page?.label
   if (level == null) return null
   // Filter to the requested source page so shared display labels never merge
   // distinct floors when reusing reportByFacilityLevel.
@@ -55,10 +105,13 @@ export function detailSummaryMetrics(
     areas: state.areas.filter((area) => area.pageIndex === pageIndex)
   }).find((candidate) => candidate.name === name && candidate.level === level)
   if (!row) return null
+  // Scale is authoritative: zero-net uncalibrated floors (hole == outer) leave
+  // unscaledPt2 at 0 and must still report null, not 0.00 m².
+  const calibrated = mmPerPtFor(state, pageIndex) != null
   return {
     name,
     level,
-    areaM2: row.unscaledPt2 > 0 ? null : row.areaM2,
+    areaM2: calibrated ? row.areaM2 : null,
     stores: row.stores
   }
 }

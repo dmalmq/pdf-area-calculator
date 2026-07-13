@@ -6,7 +6,10 @@ import {
   clampDetailSummaryPosition,
   defaultDetailSummaryPosition,
   detailSummaryMetrics,
-  paddedDetailBounds
+  detailSummarySourceFootprint,
+  DETAIL_SUMMARY_CLAMP_OUTPUT,
+  paddedDetailBounds,
+  resolveDetailSummaryPosition
 } from './detailSummary'
 
 const bbox = { x: 100, y: 200, w: 400, h: 200 }
@@ -53,6 +56,23 @@ describe('detail summary geometry', () => {
       y: 410
     })
   })
+
+  it('keeps an editor-clamped edge anchor stable under the shared export clamp', () => {
+    const output = DETAIL_SUMMARY_CLAMP_OUTPUT
+    const footprint = detailSummarySourceFootprint(bbox, output)
+    expect(footprint.w).toBeGreaterThan(0)
+    expect(footprint.h).toBeGreaterThan(0)
+
+    // Far outside the padded bounds — both editor and export resolve identically.
+    const saved = resolveDetailSummaryPosition({ x: 1e9, y: -1e9 }, bbox, output)
+    const again = resolveDetailSummaryPosition(saved, bbox, output)
+    expect(again).toEqual(saved)
+
+    const bounds = paddedDetailBounds(bbox)
+    expect(saved.x + footprint.w).toBeLessThanOrEqual(bounds.x + bounds.w + 1e-9)
+    expect(saved.y).toBeLessThanOrEqual(bounds.y + bounds.h + 1e-9)
+    expect(saved.y - footprint.h).toBeGreaterThanOrEqual(bounds.y - 1e-9)
+  })
 })
 
 describe('detailSummaryMetrics', () => {
@@ -71,6 +91,40 @@ describe('detailSummaryMetrics', () => {
 
   it('returns null area for an uncalibrated floor', () => {
     const state = { pages, areas: [square(8, 'facility')] }
+    expect(detailSummaryMetrics(state, 'Central Mall', 8)).toEqual({
+      name: 'Central Mall',
+      level: '2F',
+      areaM2: null,
+      stores: 0
+    })
+  })
+
+  it('returns null area for a zero-net uncalibrated floor (hole cancels outer)', () => {
+    const state = {
+      pages: [{ pageIndex: 8, label: '2F', scale: null }],
+      areas: [
+        {
+          id: 'facility-zero-net',
+          pageIndex: 8,
+          kind: 'facility' as const,
+          name: 'Central Mall',
+          polygon: [
+            { x: 0, y: 0 },
+            { x: 10, y: 0 },
+            { x: 10, y: 10 },
+            { x: 0, y: 10 }
+          ],
+          holes: [
+            [
+              { x: 0, y: 0 },
+              { x: 10, y: 0 },
+              { x: 10, y: 10 },
+              { x: 0, y: 10 }
+            ]
+          ]
+        }
+      ]
+    }
     expect(detailSummaryMetrics(state, 'Central Mall', 8)).toEqual({
       name: 'Central Mall',
       level: '2F',

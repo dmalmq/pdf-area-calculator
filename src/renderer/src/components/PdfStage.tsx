@@ -1,10 +1,9 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { PageViewport } from 'pdfjs-dist'
 
 import { pointInArea, shoelacePt2 } from '../geometry/area'
 import { facilityDetailBBox } from '../geometry/detailFit'
 import {
-  clampDetailSummaryAnchor,
   detailKeyboardDelta,
   detailPointerIntent,
   detailFrame,
@@ -14,17 +13,15 @@ import {
   scaleDetailAboutCursor,
   shouldDrawDetailTag,
   summaryPositionAfterDrag,
-  summarySourceOffsetsFromCss,
   tryImportDetailImage,
   viewportImageMetrics,
-  type SummarySourceOffsets,
   type ViewportTransform
 } from './detailView'
 import { DETAIL_IMAGE_OPACITY } from '../utils/detailPage'
 import {
   defaultDetailSummaryPosition,
   detailSummaryMetrics,
-  paddedDetailBounds
+  resolveDetailSummaryPosition
 } from '../utils/detailSummary'
 import {
   areaM2,
@@ -287,7 +284,6 @@ export function PdfStage({
   const [drag, setDrag] = useState<DragState | null>(null)
   const summaryRef = useRef<HTMLDivElement>(null)
   const summaryDragRef = useRef<{ pointerId: number } | null>(null)
-  const [summaryDomPx, setSummaryDomPx] = useState({ w: 0, h: 0 })
   const imageCache = useRef<Map<string, HTMLImageElement>>(new Map())
   const imageErrors = useRef<Set<string>>(new Set())
   const [imageEpoch, setImageEpoch] = useState(0)
@@ -334,27 +330,11 @@ export function PdfStage({
     return currentDetail?.summaryPosition ?? defaultDetailSummaryPosition(detailBBox)
   }, [currentDetail?.summaryPosition, detailBBox])
 
-  const summarySourceOffsets = useMemo((): SummarySourceOffsets => {
-    if (!viewport || zoom === 0 || summaryDomPx.w <= 0 || summaryDomPx.h <= 0) {
-      return { dxMin: 0, dxMax: 0, dyMin: 0, dyMax: 0 }
-    }
-    return summarySourceOffsetsFromCss(
-      summaryDomPx.w,
-      summaryDomPx.h,
-      zoom,
-      viewport.transform as ViewportTransform
-    )
-  }, [summaryDomPx.h, summaryDomPx.w, viewport, zoom])
-
   const effectiveSummaryPosition = useMemo(() => {
     if (!rawSummaryPosition || !detailBBox) return null
-    if (summaryDomPx.w <= 0 || summaryDomPx.h <= 0) return rawSummaryPosition
-    return clampDetailSummaryAnchor(
-      rawSummaryPosition,
-      paddedDetailBounds(detailBBox),
-      summarySourceOffsets
-    )
-  }, [detailBBox, rawSummaryPosition, summaryDomPx.h, summaryDomPx.w, summarySourceOffsets])
+    // Shared editor/export footprint — not the live CSS box size.
+    return resolveDetailSummaryPosition(rawSummaryPosition, detailBBox)
+  }, [detailBBox, rawSummaryPosition])
 
   const summaryCssPosition = useMemo(() => {
     if (!effectiveSummaryPosition || !viewport) return null
@@ -365,20 +345,6 @@ export function PdfStage({
     // Stage CSS size is viewport*zoom; canvases fill 100%, so CSS = viewport * zoom.
     return { x: vx * zoom, y: vy * zoom }
   }, [effectiveSummaryPosition, viewport, zoom])
-
-  useLayoutEffect(() => {
-    const el = summaryRef.current
-    // Do not depend on `t`: useT() returns a new function each render and would
-    // re-fire this effect every frame. Locale-driven content width changes already
-    // re-measure via summaryMetrics identity.
-    if (!el || !detailEditing || !summaryMetrics) {
-      setSummaryDomPx((prev) => nextSummaryDomPx(prev, null))
-      return
-    }
-    setSummaryDomPx((prev) =>
-      nextSummaryDomPx(prev, { w: el.offsetWidth, h: el.offsetHeight })
-    )
-  }, [detailEditing, summaryMetrics, zoom, rawSummaryPosition])
 
   // HTMLImageElement decoded from raw base64, cached by the base64 string. Returns the
   // element once decoded (so the draw path can size it); a fresh element triggers one
@@ -1205,11 +1171,7 @@ export function PdfStage({
       if (drag.pointerId != null && event.pointerId !== drag.pointerId) return
       if (moved) {
         const candidate = summaryPositionAfterDrag(drag.startPosition, drag.startPt, pdfPt)
-        const clamped = clampDetailSummaryAnchor(
-          candidate,
-          paddedDetailBounds(detailBBox),
-          summaryOffsetsInSourcePoints()
-        )
+        const clamped = resolveDetailSummaryPosition(candidate, detailBBox)
         setDetailSummaryPosition(detailEditing.name, detailEditing.pageIndex, clamped)
       }
       setDrag({ ...drag, moved })
@@ -1222,16 +1184,9 @@ export function PdfStage({
     endInteraction()
   }
 
-  const summaryOffsetsInSourcePoints = (): SummarySourceOffsets => {
-    const el = summaryRef.current
-    if (!viewport || zoom === 0) return summarySourceOffsets
-    if (!el) return summarySourceOffsets
-    return summarySourceOffsetsFromCss(
-      el.offsetWidth,
-      el.offsetHeight,
-      zoom,
-      viewport.transform as ViewportTransform
-    )
+  const clampSummaryPosition = (position: Pt): Pt | null => {
+    if (!detailBBox) return null
+    return resolveDetailSummaryPosition(position, detailBBox)
   }
 
   // Idempotent: pointerup/cancel/lostcapture/unmount/detail-exit all share this so
@@ -1251,6 +1206,20 @@ export function PdfStage({
   }, [detailEditing, finishSummaryDrag])
 
   const onSummaryPointerDown = (event: React.PointerEvent<HTMLDivElement>): void => {
+    // Middle-button pan over the card: capture on the overlay so its move/up path runs.
+    if (event.button === 1) {
+      if (!overlayRef.current) return
+      event.preventDefault()
+      overlayRef.current.setPointerCapture(event.pointerId)
+      const scroll = scrollRef.current
+      setDrag({
+        kind: 'pan',
+        startClient: { x: event.clientX, y: event.clientY },
+        startPan: { x: scroll?.scrollLeft ?? pan.x, y: scroll?.scrollTop ?? pan.y },
+        moved: false
+      })
+      return
+    }
     if (event.button !== 0) return
     if (!detailEditing || !viewport || !overlayRef.current || !effectiveSummaryPosition) return
     if (summaryDragRef.current != null) return
@@ -1282,12 +1251,10 @@ export function PdfStage({
       drag.moved || distance(drag.startClient, { x: event.clientX, y: event.clientY }) > 2
     if (moved) {
       const candidate = summaryPositionAfterDrag(drag.startPosition, drag.startPt, pdfPt)
-      const clamped = clampDetailSummaryAnchor(
-        candidate,
-        paddedDetailBounds(detailBBox),
-        summaryOffsetsInSourcePoints()
-      )
-      setDetailSummaryPosition(detailEditing.name, detailEditing.pageIndex, clamped)
+      const clamped = clampSummaryPosition(candidate)
+      if (clamped) {
+        setDetailSummaryPosition(detailEditing.name, detailEditing.pageIndex, clamped)
+      }
     }
     setDrag({ ...drag, moved })
   }
@@ -1315,15 +1282,13 @@ export function PdfStage({
     if (!delta) return
     event.preventDefault()
     event.stopPropagation()
-    const next = clampDetailSummaryAnchor(
-      {
-        x: effectiveSummaryPosition.x + delta.x,
-        y: effectiveSummaryPosition.y + delta.y
-      },
-      paddedDetailBounds(detailBBox),
-      summaryOffsetsInSourcePoints()
-    )
-    setDetailSummaryPosition(detailEditing.name, detailEditing.pageIndex, next)
+    const next = clampSummaryPosition({
+      x: effectiveSummaryPosition.x + delta.x,
+      y: effectiveSummaryPosition.y + delta.y
+    })
+    if (next) {
+      setDetailSummaryPosition(detailEditing.name, detailEditing.pageIndex, next)
+    }
   }
 
   const onDoubleClick = (event: React.MouseEvent<HTMLCanvasElement>): void => {

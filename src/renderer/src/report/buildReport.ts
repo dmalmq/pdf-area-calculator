@@ -9,10 +9,9 @@ import {
 } from 'pdf-lib'
 import { DETAIL_IMAGE_OPACITY } from '../utils/detailPage'
 import {
-  clampDetailSummaryPosition,
   defaultDetailSummaryPosition,
   detailSummaryMetrics,
-  paddedDetailBounds
+  resolveDetailSummaryPosition
 } from '../utils/detailSummary'
 import { t } from '../i18n'
 
@@ -278,12 +277,8 @@ async function drawDetailPages(
     })
     const summaryImage = await doc.embedPng(summary.png)
     const sourcePosition = dp.summaryPosition ?? defaultDetailSummaryPosition(bbox)
-    const sourceSize = { w: summary.width / fit.scale, h: summary.height / fit.scale }
-    const clamped = clampDetailSummaryPosition(
-      sourcePosition,
-      paddedDetailBounds(bbox),
-      sourceSize
-    )
+    // Shared editor/export clamp contract so edge anchors round-trip.
+    const clamped = resolveDetailSummaryPosition(sourcePosition, bbox)
     const mappedTopLeft = mapPt(clamped)
     page.drawImage(summaryImage, {
       x: mappedTopLeft.x,
