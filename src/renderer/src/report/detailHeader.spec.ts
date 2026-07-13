@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { renderDetailSummaryPng } from './detailHeader'
+import { measureDetailSummarySize, renderDetailSummaryPng } from './detailHeader'
 
 // Canvas stub: measureText width scales with text length; fillText calls are
 // collected so we can assert the summary drew name, metrics, and labels.
@@ -115,5 +115,47 @@ describe('renderDetailSummaryPng', () => {
     for (const frag of xFragments) {
       expect(frag.length * 8).toBeLessThanOrEqual(200 - 24)
     }
+  })
+})
+
+describe('measureDetailSummarySize', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('matches renderDetailSummaryPng dimensions and grows for wrapped names', () => {
+    setupCanvas()
+    const labels = { floor: 'Floor', area: 'Area', stores: 'Stores' }
+    const shortInput = {
+      name: 'Mall',
+      level: '1F',
+      area: '10.00 m²',
+      stores: '1',
+      labels
+    }
+    const longInput = {
+      name: 'A very long facility name that cannot fit on one line without wrapping',
+      level: '1F',
+      area: '10.00 m²',
+      stores: '1',
+      labels,
+      maxWidth: 320
+    }
+    const short = measureDetailSummarySize(shortInput)
+    const long = measureDetailSummarySize(longInput)
+    expect(long.h).toBeGreaterThan(short.h)
+    expect(long.w).toBeLessThanOrEqual(320)
+  })
+
+  it('agrees with renderDetailSummaryPng width and height', async () => {
+    setupCanvas()
+    const input = {
+      name: 'Central Mall',
+      level: 'B1F',
+      area: '100.00 m²',
+      stores: '3',
+      labels: { floor: 'Floor', area: 'Area', stores: 'Stores' }
+    }
+    const measured = measureDetailSummarySize(input)
+    const rendered = await renderDetailSummaryPng(input)
+    expect(measured).toEqual({ w: rendered.width, h: rendered.height })
   })
 })

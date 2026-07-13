@@ -14,14 +14,6 @@ export const DETAIL_PAGE_MARGIN = 28
 const A4_SHORT = 595.28
 const A4_LONG = 841.89
 
-/**
- * Deterministic summary card size in output points (1 CSS px = 1 PDF pt when embedded).
- * Matches detailHeader MIN_WIDTH and single-line height:
- * PAD_Y*2 + name + TABLE_GAP + label row + value row = 20 + 19 + 8 + 19 + 19 = 85.
- * Editor and export both clamp with this contract so edge anchors round-trip.
- */
-export const DETAIL_SUMMARY_CLAMP_OUTPUT = { w: 280, h: 85 } as const
-
 export function paddedDetailBounds(bbox: BBox): BBox {
   const padX = bbox.w * 0.05
   const padY = bbox.h * 0.05
@@ -65,23 +57,24 @@ export function detailPageContentSize(bbox: BBox): { width: number; height: numb
   }
 }
 
-/** Source-space footprint of a summary card: output points ÷ detailFit scale. */
+/** Source-space footprint of a summary card: measured output points ÷ detailFit scale. */
 export function detailSummarySourceFootprint(
   bbox: BBox,
-  outputSize: { w: number; h: number } = DETAIL_SUMMARY_CLAMP_OUTPUT
+  outputSize: { w: number; h: number }
 ): { w: number; h: number } {
   const fit = detailFit(bbox, detailPageContentSize(bbox))
   return { w: outputSize.w / fit.scale, h: outputSize.h / fit.scale }
 }
 
 /**
- * Shared editor+export clamp: default anchor when unset, then clamp with the
- * deterministic source footprint so a saved edge position is not re-clamped later.
+ * Shared editor+export persist clamp: default when unset, then clamp with the
+ * measured export footprint so a saved edge position is not re-clamped later.
+ * `outputSize` must come from measureDetailSummarySize / renderDetailSummaryPng.
  */
 export function resolveDetailSummaryPosition(
   position: Pt | undefined,
   bbox: BBox,
-  outputSize: { w: number; h: number } = DETAIL_SUMMARY_CLAMP_OUTPUT
+  outputSize: { w: number; h: number }
 ): Pt {
   return clampDetailSummaryPosition(
     position ?? defaultDetailSummaryPosition(bbox),

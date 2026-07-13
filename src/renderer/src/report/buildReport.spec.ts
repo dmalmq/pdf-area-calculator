@@ -137,7 +137,10 @@ function expectedSummaryDraw(
     y: contentY + (p.y - (bbox.y - padY)) * fit.scale + fit.offsetY
   })
   const sourcePosition = summaryPosition ?? defaultDetailSummaryPosition(bbox)
-  const clamped = resolveDetailSummaryPosition(sourcePosition, bbox)
+  const clamped = resolveDetailSummaryPosition(sourcePosition, bbox, {
+    w: summarySize.width,
+    h: summarySize.height
+  })
   const mappedTopLeft = mapPt(clamped)
   return {
     x: mappedTopLeft.x,

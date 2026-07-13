@@ -277,8 +277,11 @@ async function drawDetailPages(
     })
     const summaryImage = await doc.embedPng(summary.png)
     const sourcePosition = dp.summaryPosition ?? defaultDetailSummaryPosition(bbox)
-    // Shared editor/export clamp contract so edge anchors round-trip.
-    const clamped = resolveDetailSummaryPosition(sourcePosition, bbox)
+    // Measured PNG size drives the shared footprint so editor/export agree.
+    const clamped = resolveDetailSummaryPosition(sourcePosition, bbox, {
+      w: summary.width,
+      h: summary.height
+    })
     const mappedTopLeft = mapPt(clamped)
     page.drawImage(summaryImage, {
       x: mappedTopLeft.x,

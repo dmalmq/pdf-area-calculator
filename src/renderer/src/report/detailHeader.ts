@@ -26,7 +26,27 @@ export interface DetailSummaryPng {
   height: number
 }
 
+export interface DetailSummarySize {
+  w: number
+  h: number
+}
+
 type Measure = (text: string) => number
+
+interface DetailSummaryLayout extends DetailSummarySize {
+  nameLines: string[]
+  floorLabelLines: string[]
+  areaLabelLines: string[]
+  storesLabelLines: string[]
+  floorValueLines: string[]
+  areaValueLines: string[]
+  storesValueLines: string[]
+  floorColW: number
+  areaColW: number
+  storesColW: number
+  labelRows: number
+  valueRows: number
+}
 
 // Hard-break by measured characters; a single glyph wider than maxWidth is still
 // emitted alone (cannot shrink further without clipping mid-glyph).
@@ -88,24 +108,22 @@ function maxLineWidth(lines: string[], measure: Measure): number {
   return max
 }
 
-export async function renderDetailSummaryPng(
-  input: DetailSummaryRenderInput
-): Promise<DetailSummaryPng> {
-  const dpr = 2
-  const canvas = document.createElement('canvas')
-  const measureCtx = canvas.getContext('2d')
-  if (!measureCtx) throw new Error('Canvas 2D context unavailable')
-
-  const maxWidth = input.maxWidth ?? MAX_WIDTH
-  const innerMax = Math.max(0, maxWidth - PAD_X * 2)
-
-  const measureAt = (size: number, weight: '' | 'bold ' = ''): Measure => {
+function createMeasureAt(ctx: CanvasRenderingContext2D): (size: number, weight?: '' | 'bold ') => Measure {
+  return (size: number, weight: '' | 'bold ' = ''): Measure => {
     return (text: string) => {
-      measureCtx.font = `${weight}${size}px ${FONT_FAMILY}`
-      return measureCtx.measureText(text).width
+      ctx.font = `${weight}${size}px ${FONT_FAMILY}`
+      return ctx.measureText(text).width
     }
   }
+}
 
+function layoutDetailSummary(
+  input: DetailSummaryRenderInput,
+  ctx: CanvasRenderingContext2D
+): DetailSummaryLayout {
+  const maxWidth = input.maxWidth ?? MAX_WIDTH
+  const innerMax = Math.max(0, maxWidth - PAD_X * 2)
+  const measureAt = createMeasureAt(ctx)
   const measureName = measureAt(NAME_SIZE, 'bold ')
   const measureBody = measureAt(BODY_SIZE)
   const measureLabel = measureAt(LABEL_SIZE)
@@ -114,7 +132,6 @@ export async function renderDetailSummaryPng(
   const nameBlockW = maxLineWidth(nameLines, measureName)
 
   const colGap = TABLE_GAP
-  // Natural column widths from single-line content.
   let floorLabelLines = [input.labels.floor]
   let areaLabelLines = [input.labels.area]
   let storesLabelLines = [input.labels.stores]
@@ -127,9 +144,6 @@ export async function renderDetailSummaryPng(
   let storesColW = Math.max(measureLabel(input.labels.stores), measureBody(input.stores))
   let tableW = floorColW + areaColW + storesColW + colGap * 2
 
-  // Grow the card for the table up to maxWidth. If the table still overflows
-  // the inner budget, wrap each column's text into a proportional share so the
-  // row never paints past the right edge.
   if (tableW > innerMax) {
     const avail = Math.max(0, innerMax - colGap * 2)
     const totalNat = floorColW + areaColW + storesColW || 1
@@ -142,11 +156,19 @@ export async function renderDetailSummaryPng(
     floorValueLines = wrapText(input.level, floorColW, measureBody)
     areaValueLines = wrapText(input.area, areaColW, measureBody)
     storesValueLines = wrapText(input.stores, storesColW, measureBody)
-    floorColW = Math.max(maxLineWidth(floorLabelLines, measureLabel), maxLineWidth(floorValueLines, measureBody))
-    areaColW = Math.max(maxLineWidth(areaLabelLines, measureLabel), maxLineWidth(areaValueLines, measureBody))
-    storesColW = Math.max(maxLineWidth(storesLabelLines, measureLabel), maxLineWidth(storesValueLines, measureBody))
+    floorColW = Math.max(
+      maxLineWidth(floorLabelLines, measureLabel),
+      maxLineWidth(floorValueLines, measureBody)
+    )
+    areaColW = Math.max(
+      maxLineWidth(areaLabelLines, measureLabel),
+      maxLineWidth(areaValueLines, measureBody)
+    )
+    storesColW = Math.max(
+      maxLineWidth(storesLabelLines, measureLabel),
+      maxLineWidth(storesValueLines, measureBody)
+    )
     tableW = floorColW + areaColW + storesColW + colGap * 2
-    // Final safety: never claim more than innerMax for the table band.
     if (tableW > innerMax) {
       storesColW = Math.max(1, storesColW - (tableW - innerMax))
       tableW = floorColW + areaColW + storesColW + colGap * 2
@@ -154,11 +176,58 @@ export async function renderDetailSummaryPng(
   }
 
   const contentW = Math.max(nameBlockW, tableW)
-  const width = Math.min(maxWidth, Math.max(MIN_WIDTH, Math.ceil(PAD_X * 2 + contentW)))
+  const w = Math.min(maxWidth, Math.max(MIN_WIDTH, Math.ceil(PAD_X * 2 + contentW)))
   const nameH = nameLines.length * LINE_HEIGHT
   const labelRows = Math.max(floorLabelLines.length, areaLabelLines.length, storesLabelLines.length)
   const valueRows = Math.max(floorValueLines.length, areaValueLines.length, storesValueLines.length)
-  const height = PAD_Y * 2 + nameH + TABLE_GAP + labelRows * LINE_HEIGHT + valueRows * LINE_HEIGHT
+  const h = PAD_Y * 2 + nameH + TABLE_GAP + labelRows * LINE_HEIGHT + valueRows * LINE_HEIGHT
+
+  return {
+    w,
+    h,
+    nameLines,
+    floorLabelLines,
+    areaLabelLines,
+    storesLabelLines,
+    floorValueLines,
+    areaValueLines,
+    storesValueLines,
+    floorColW,
+    areaColW,
+    storesColW,
+    labelRows,
+    valueRows
+  }
+}
+
+/**
+ * Shared card size used by editor+export clamp. Uses the same measureText path as
+ * renderDetailSummaryPng so the two cannot drift.
+ */
+export function measureDetailSummarySize(
+  input: DetailSummaryRenderInput,
+  maxWidth?: number
+): DetailSummarySize {
+  const canvas = document.createElement('canvas')
+  const ctx = canvas.getContext('2d')
+  if (!ctx) throw new Error('Canvas 2D context unavailable')
+  const layout = layoutDetailSummary(
+    maxWidth == null ? input : { ...input, maxWidth },
+    ctx
+  )
+  return { w: layout.w, h: layout.h }
+}
+
+export async function renderDetailSummaryPng(
+  input: DetailSummaryRenderInput
+): Promise<DetailSummaryPng> {
+  const dpr = 2
+  const canvas = document.createElement('canvas')
+  const measureCtx = canvas.getContext('2d')
+  if (!measureCtx) throw new Error('Canvas 2D context unavailable')
+
+  const layout = layoutDetailSummary(input, measureCtx)
+  const { w: width, h: height } = layout
 
   canvas.width = width * dpr
   canvas.height = height * dpr
@@ -172,24 +241,22 @@ export async function renderDetailSummaryPng(
   ctx.lineWidth = 1
   ctx.strokeRect(0.5, 0.5, width - 1, height - 1)
 
-  // Facility name (may wrap)
   ctx.fillStyle = '#26362f'
   ctx.font = `bold ${NAME_SIZE}px ${FONT_FAMILY}`
   ctx.textAlign = 'left'
   ctx.textBaseline = 'middle'
   let y = PAD_Y + LINE_HEIGHT / 2
-  for (const line of nameLines) {
+  for (const line of layout.nameLines) {
     ctx.fillText(line, PAD_X, y)
     y += LINE_HEIGHT
   }
 
-  // Table: three columns — floor | area | stores
   y += TABLE_GAP
   const floorX = PAD_X
-  const areaX = floorX + floorColW + colGap
-  const storesX = areaX + areaColW + colGap
-  const areaRight = areaX + areaColW
-  const storesRight = storesX + storesColW
+  const areaX = floorX + layout.floorColW + TABLE_GAP
+  const storesX = areaX + layout.areaColW + TABLE_GAP
+  const areaRight = areaX + layout.areaColW
+  const storesRight = storesX + layout.storesColW
 
   const drawColumnLines = (
     lines: string[],
@@ -210,14 +277,14 @@ export async function renderDetailSummaryPng(
   }
 
   const labelY = y
-  drawColumnLines(floorLabelLines, floorX, 'left', labelY, '#65756d', LABEL_SIZE)
-  drawColumnLines(areaLabelLines, areaRight, 'right', labelY, '#65756d', LABEL_SIZE)
-  drawColumnLines(storesLabelLines, storesRight, 'right', labelY, '#65756d', LABEL_SIZE)
+  drawColumnLines(layout.floorLabelLines, floorX, 'left', labelY, '#65756d', LABEL_SIZE)
+  drawColumnLines(layout.areaLabelLines, areaRight, 'right', labelY, '#65756d', LABEL_SIZE)
+  drawColumnLines(layout.storesLabelLines, storesRight, 'right', labelY, '#65756d', LABEL_SIZE)
 
-  const valueY = labelY + labelRows * LINE_HEIGHT
-  drawColumnLines(floorValueLines, floorX, 'left', valueY, '#26362f', BODY_SIZE)
-  drawColumnLines(areaValueLines, areaRight, 'right', valueY, '#26362f', BODY_SIZE)
-  drawColumnLines(storesValueLines, storesRight, 'right', valueY, '#26362f', BODY_SIZE)
+  const valueY = labelY + layout.labelRows * LINE_HEIGHT
+  drawColumnLines(layout.floorValueLines, floorX, 'left', valueY, '#26362f', BODY_SIZE)
+  drawColumnLines(layout.areaValueLines, areaRight, 'right', valueY, '#26362f', BODY_SIZE)
+  drawColumnLines(layout.storesValueLines, storesRight, 'right', valueY, '#26362f', BODY_SIZE)
 
   const blob = await new Promise<Blob>((resolve, reject) => {
     canvas.toBlob(

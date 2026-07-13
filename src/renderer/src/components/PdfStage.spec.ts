@@ -4,7 +4,6 @@ import {
   anchoredZoomScroll,
   constrainDelta,
   doubleClickAction,
-  nextSummaryDomPx,
   shouldPanPointer,
   tagBoxSize
 } from './PdfStage'
@@ -50,19 +49,6 @@ describe('PdfStage interaction helpers', () => {
   })
 })
 
-describe('nextSummaryDomPx', () => {
-  it('reuses the previous object when clearing to zero so measure effects stay stable', () => {
-    const zero = { w: 0, h: 0 }
-    expect(nextSummaryDomPx(zero, null)).toBe(zero)
-    expect(nextSummaryDomPx(zero, { w: 0, h: 0 })).toBe(zero)
-  })
-
-  it('returns a new size only when measured values change', () => {
-    const prev = { w: 100, h: 40 }
-    expect(nextSummaryDomPx(prev, { w: 100, h: 40 })).toBe(prev)
-    expect(nextSummaryDomPx(prev, { w: 120, h: 40 })).toEqual({ w: 120, h: 40 })
-  })
-})
 
 describe('tagBoxSize', () => {
   it('sizes a one-line tag: widest line + padding, one line-height + padding', () => {

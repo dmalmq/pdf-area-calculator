@@ -4,6 +4,7 @@ import type { PageViewport } from 'pdfjs-dist'
 import { pointInArea, shoelacePt2 } from '../geometry/area'
 import { facilityDetailBBox } from '../geometry/detailFit'
 import {
+  clampDetailSummaryAnchor,
   detailKeyboardDelta,
   detailPointerIntent,
   detailFrame,
@@ -13,6 +14,7 @@ import {
   scaleDetailAboutCursor,
   shouldDrawDetailTag,
   summaryPositionAfterDrag,
+  summarySourceOffsetsFromCss,
   tryImportDetailImage,
   viewportImageMetrics,
   type ViewportTransform
@@ -21,8 +23,11 @@ import { DETAIL_IMAGE_OPACITY } from '../utils/detailPage'
 import {
   defaultDetailSummaryPosition,
   detailSummaryMetrics,
+  paddedDetailBounds,
   resolveDetailSummaryPosition
 } from '../utils/detailSummary'
+import { measureDetailSummarySize } from '../report/detailHeader'
+import { t as translateNow, useT } from '../i18n'
 import {
   areaM2,
   areaStore,
@@ -42,7 +47,6 @@ import {
   type LegendGeometry,
   REPORT_FONT_FAMILY
 } from '../report/legendLayout'
-import { t as translateNow, useT } from '../i18n'
 
 interface PdfStageProps {
   calibrationDraft: Pt[]
@@ -214,14 +218,6 @@ export function constrainDelta(delta: Pt, lockAxis: boolean): Pt {
   return Math.abs(delta.x) >= Math.abs(delta.y) ? { x: delta.x, y: 0 } : { x: 0, y: delta.y }
 }
 
-/** Keep the previous size object when values match so measure effects do not re-render forever. */
-export function nextSummaryDomPx(
-  prev: { w: number; h: number },
-  measured: { w: number; h: number } | null
-): { w: number; h: number } {
-  const next = measured ?? { w: 0, h: 0 }
-  return prev.w === next.w && prev.h === next.h ? prev : next
-}
 
 export function PdfStage({
   calibrationDraft,
@@ -330,21 +326,67 @@ export function PdfStage({
     return currentDetail?.summaryPosition ?? defaultDetailSummaryPosition(detailBBox)
   }, [currentDetail?.summaryPosition, detailBBox])
 
-  const effectiveSummaryPosition = useMemo(() => {
-    if (!rawSummaryPosition || !detailBBox) return null
-    // Shared editor/export footprint — not the live CSS box size.
-    return resolveDetailSummaryPosition(rawSummaryPosition, detailBBox)
-  }, [detailBBox, rawSummaryPosition])
+  const summaryRenderInput = useMemo(() => {
+    if (!summaryMetrics) return null
+    return {
+      name: summaryMetrics.name,
+      level: summaryMetrics.level,
+      area:
+        summaryMetrics.areaM2 == null
+          ? t('detail.notCalibrated')
+          : `${summaryMetrics.areaM2.toFixed(2)} m²`,
+      stores: String(summaryMetrics.stores),
+      labels: {
+        floor: t('detail.summaryFloor'),
+        area: t('detail.summaryArea'),
+        stores: t('detail.summaryStores')
+      }
+    }
+  }, [summaryMetrics, t])
+
+  const summaryOutputSize = useMemo(() => {
+    if (!summaryRenderInput) return null
+    try {
+      return measureDetailSummarySize(summaryRenderInput)
+    } catch {
+      return null
+    }
+  }, [summaryRenderInput])
+
+  // Persist/export path: shared unrotated footprint from measured output size.
+  const persistedSummaryPosition = useMemo(() => {
+    if (!rawSummaryPosition || !detailBBox || !summaryOutputSize) return rawSummaryPosition
+    return resolveDetailSummaryPosition(rawSummaryPosition, detailBBox, summaryOutputSize)
+  }, [detailBBox, rawSummaryPosition, summaryOutputSize])
+
+  // Render-time only: keep the screen-aligned CSS card inside padded bounds on
+  // rotated viewports. Does not change the persisted value.
+  const displaySummaryPosition = useMemo(() => {
+    if (!persistedSummaryPosition || !detailBBox || !summaryOutputSize || !viewport) {
+      return persistedSummaryPosition
+    }
+    const offsets = summarySourceOffsetsFromCss(
+      summaryOutputSize.w,
+      summaryOutputSize.h,
+      zoom,
+      viewport.transform as ViewportTransform
+    )
+    return clampDetailSummaryAnchor(
+      persistedSummaryPosition,
+      paddedDetailBounds(detailBBox),
+      offsets
+    )
+  }, [detailBBox, persistedSummaryPosition, summaryOutputSize, viewport, zoom])
 
   const summaryCssPosition = useMemo(() => {
-    if (!effectiveSummaryPosition || !viewport) return null
+    if (!displaySummaryPosition || !viewport) return null
     const [vx, vy] = viewport.convertToViewportPoint(
-      effectiveSummaryPosition.x,
-      effectiveSummaryPosition.y
+      displaySummaryPosition.x,
+      displaySummaryPosition.y
     )
     // Stage CSS size is viewport*zoom; canvases fill 100%, so CSS = viewport * zoom.
     return { x: vx * zoom, y: vy * zoom }
-  }, [effectiveSummaryPosition, viewport, zoom])
+  }, [displaySummaryPosition, viewport, zoom])
 
   // HTMLImageElement decoded from raw base64, cached by the base64 string. Returns the
   // element once decoded (so the draw path can size it); a fresh element triggers one
@@ -1169,9 +1211,9 @@ export function PdfStage({
       detailBBox
     ) {
       if (drag.pointerId != null && event.pointerId !== drag.pointerId) return
-      if (moved) {
+      if (moved && summaryOutputSize) {
         const candidate = summaryPositionAfterDrag(drag.startPosition, drag.startPt, pdfPt)
-        const clamped = resolveDetailSummaryPosition(candidate, detailBBox)
+        const clamped = resolveDetailSummaryPosition(candidate, detailBBox, summaryOutputSize)
         setDetailSummaryPosition(detailEditing.name, detailEditing.pageIndex, clamped)
       }
       setDrag({ ...drag, moved })
@@ -1184,9 +1226,9 @@ export function PdfStage({
     endInteraction()
   }
 
-  const clampSummaryPosition = (position: Pt): Pt | null => {
-    if (!detailBBox) return null
-    return resolveDetailSummaryPosition(position, detailBBox)
+  const persistSummaryPosition = (position: Pt): Pt | null => {
+    if (!detailBBox || !summaryOutputSize) return null
+    return resolveDetailSummaryPosition(position, detailBBox, summaryOutputSize)
   }
 
   // Idempotent: pointerup/cancel/lostcapture/unmount/detail-exit all share this so
@@ -1221,7 +1263,14 @@ export function PdfStage({
       return
     }
     if (event.button !== 0) return
-    if (!detailEditing || !viewport || !overlayRef.current || !effectiveSummaryPosition) return
+    if (
+      !detailEditing ||
+      !viewport ||
+      !overlayRef.current ||
+      !persistedSummaryPosition
+    ) {
+      return
+    }
     if (summaryDragRef.current != null) return
     event.stopPropagation()
     event.preventDefault()
@@ -1236,7 +1285,7 @@ export function PdfStage({
       startClient: { x: event.clientX, y: event.clientY },
       startPan: pan,
       startPt,
-      startPosition: effectiveSummaryPosition,
+      startPosition: persistedSummaryPosition,
       pointerId: event.pointerId,
       moved: false
     })
@@ -1251,7 +1300,7 @@ export function PdfStage({
       drag.moved || distance(drag.startClient, { x: event.clientX, y: event.clientY }) > 2
     if (moved) {
       const candidate = summaryPositionAfterDrag(drag.startPosition, drag.startPt, pdfPt)
-      const clamped = clampSummaryPosition(candidate)
+      const clamped = persistSummaryPosition(candidate)
       if (clamped) {
         setDetailSummaryPosition(detailEditing.name, detailEditing.pageIndex, clamped)
       }
@@ -1275,16 +1324,16 @@ export function PdfStage({
   }
 
   const onSummaryKeyDown = (event: React.KeyboardEvent<HTMLDivElement>): void => {
-    if (!detailEditing || !detailBBox || !effectiveSummaryPosition) return
+    if (!detailEditing || !detailBBox || !persistedSummaryPosition) return
     // Escape must fall through to the window listener that closes detail mode.
     if (event.key === 'Escape') return
     const delta = detailKeyboardDelta(event.key, event.shiftKey)
     if (!delta) return
     event.preventDefault()
     event.stopPropagation()
-    const next = clampSummaryPosition({
-      x: effectiveSummaryPosition.x + delta.x,
-      y: effectiveSummaryPosition.y + delta.y
+    const next = persistSummaryPosition({
+      x: persistedSummaryPosition.x + delta.x,
+      y: persistedSummaryPosition.y + delta.y
     })
     if (next) {
       setDetailSummaryPosition(detailEditing.name, detailEditing.pageIndex, next)

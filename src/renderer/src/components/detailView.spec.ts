@@ -98,6 +98,20 @@ describe('detail summary interaction decisions', () => {
     expect(clamped.y + offsets.dyMin).toBeGreaterThanOrEqual(bounds.y)
     expect(clamped.y + offsets.dyMax).toBeLessThanOrEqual(bounds.y + bounds.h)
   })
+
+  it('keeps a 90-degree default top-left anchor fully inside padded bounds', () => {
+    const bounds = { x: 80, y: 190, w: 440, h: 220 }
+    // Measured card size in CSS px; zoom 1, 90° viewport.
+    const offsets = summarySourceOffsetsFromCss(280, 85, 1, [0, 2, 2, 0, 0, 0])
+    const defaultTopLeft = { x: bounds.x, y: bounds.y + bounds.h }
+    const displayed = clampDetailSummaryAnchor(defaultTopLeft, bounds, offsets)
+    expect(displayed.x + offsets.dxMin).toBeGreaterThanOrEqual(bounds.x)
+    expect(displayed.x + offsets.dxMax).toBeLessThanOrEqual(bounds.x + bounds.w)
+    expect(displayed.y + offsets.dyMin).toBeGreaterThanOrEqual(bounds.y)
+    expect(displayed.y + offsets.dyMax).toBeLessThanOrEqual(bounds.y + bounds.h)
+    // Default top-left would overflow +y under this transform; display clamp pulls it in.
+    expect(displayed.y).toBeLessThan(defaultTopLeft.y)
+  })
 })
 
 describe('detail image import', () => {

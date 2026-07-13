@@ -7,7 +7,6 @@ import {
   defaultDetailSummaryPosition,
   detailSummaryMetrics,
   detailSummarySourceFootprint,
-  DETAIL_SUMMARY_CLAMP_OUTPUT,
   paddedDetailBounds,
   resolveDetailSummaryPosition
 } from './detailSummary'
@@ -58,20 +57,23 @@ describe('detail summary geometry', () => {
   })
 
   it('keeps an editor-clamped edge anchor stable under the shared export clamp', () => {
-    const output = DETAIL_SUMMARY_CLAMP_OUTPUT
-    const footprint = detailSummarySourceFootprint(bbox, output)
-    expect(footprint.w).toBeGreaterThan(0)
-    expect(footprint.h).toBeGreaterThan(0)
+    const short = { w: 280, h: 85 }
+    const longWrapped = { w: 360, h: 142 }
+    const shortFp = detailSummarySourceFootprint(bbox, short)
+    const longFp = detailSummarySourceFootprint(bbox, longWrapped)
+    expect(longFp.w).toBeGreaterThan(shortFp.w)
+    expect(longFp.h).toBeGreaterThan(shortFp.h)
 
-    // Far outside the padded bounds — both editor and export resolve identically.
-    const saved = resolveDetailSummaryPosition({ x: 1e9, y: -1e9 }, bbox, output)
-    const again = resolveDetailSummaryPosition(saved, bbox, output)
+    // Far outside the padded bounds — editor and export resolve identically.
+    const saved = resolveDetailSummaryPosition({ x: 1e9, y: -1e9 }, bbox, longWrapped)
+    const again = resolveDetailSummaryPosition(saved, bbox, longWrapped)
     expect(again).toEqual(saved)
 
     const bounds = paddedDetailBounds(bbox)
-    expect(saved.x + footprint.w).toBeLessThanOrEqual(bounds.x + bounds.w + 1e-9)
+    // Full measured card stays inside padded bounds after the shared clamp.
+    expect(saved.x + longFp.w).toBeLessThanOrEqual(bounds.x + bounds.w + 1e-9)
     expect(saved.y).toBeLessThanOrEqual(bounds.y + bounds.h + 1e-9)
-    expect(saved.y - footprint.h).toBeGreaterThanOrEqual(bounds.y - 1e-9)
+    expect(saved.y - longFp.h).toBeGreaterThanOrEqual(bounds.y - 1e-9)
   })
 })
 
