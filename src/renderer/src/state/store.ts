@@ -372,7 +372,12 @@ export function detailCandidates(
   for (const name of state.names) {
     const owned = state.areas.filter((area) => area.name === name)
     if (owned.length === 0) continue
-    const pageIndices = [...new Set(owned.map((area) => area.pageIndex))].sort((a, b) => a - b)
+    const displayRank = new Map(state.pages.map((page, index) => [page.pageIndex, index]))
+    const pageIndices = [...new Set(owned.map((area) => area.pageIndex))].sort(
+      (a, b) =>
+        (displayRank.get(a) ?? Number.MAX_SAFE_INTEGER) -
+          (displayRank.get(b) ?? Number.MAX_SAFE_INTEGER) || a - b
+    )
     for (const pageIndex of pageIndices) {
       const stores = owned.filter(
         (area) => area.pageIndex === pageIndex && area.kind === 'store'
@@ -381,6 +386,24 @@ export function detailCandidates(
     }
   }
   return result
+}
+
+export function orderedDetailPages(
+  state: Pick<AppState, 'detailPages' | 'names' | 'pages'>
+): DetailPage[] {
+  const nameRank = new Map(state.names.map((name, index) => [name, index]))
+  const pageRank = new Map(state.pages.map((page, index) => [page.pageIndex, index]))
+  return state.detailPages.slice().sort((a, b) => {
+    const aNameRank = nameRank.get(a.name) ?? state.names.length
+    const bNameRank = nameRank.get(b.name) ?? state.names.length
+    return (
+      aNameRank - bNameRank ||
+      a.name.localeCompare(b.name) ||
+      (pageRank.get(a.pageIndex) ?? Number.MAX_SAFE_INTEGER) -
+        (pageRank.get(b.pageIndex) ?? Number.MAX_SAFE_INTEGER) ||
+      a.pageIndex - b.pageIndex
+    )
+  })
 }
 
 export function nextStoreCode(
@@ -520,7 +543,7 @@ function pruneDetailPages(state: Pick<AppState, 'areas' | 'detailPages'>): Detai
 export function createAreaStore(initial?: Partial<AppState>): StoreApi<AreaStore> {
   let suppressHistory = false
   let interactionSnapshot: string | null = null
-  let detailReturnView: { activePageIndex: number; zoom: number; pan: Pt } | null = null
+  let detailReturnView: { sourcePageIndex: number | null; zoom: number; pan: Pt } | null = null
   const detailEditorValid = (
     editing: AppState['detailEditing'],
     detailPages: DetailPage[],
@@ -529,20 +552,37 @@ export function createAreaStore(initial?: Partial<AppState>): StoreApi<AreaStore
     editing != null &&
     detailPages.some((dp) => dp.name === editing.name && dp.pageIndex === editing.pageIndex) &&
     areas.some((area) => area.name === editing.name && area.pageIndex === editing.pageIndex)
-  const closeDetailFields = (): Partial<AppState> => {
+  const closeDetailFields = (pages: PageState[], activePageIndex: number): Partial<AppState> => {
     const view = detailReturnView
     detailReturnView = null
+    const returnIndex =
+      view?.sourcePageIndex == null
+        ? -1
+        : pages.findIndex((page) => page.pageIndex === view.sourcePageIndex)
     return {
       detailEditing: null,
-      ...(view ?? {})
+      ...(view
+        ? {
+            activePageIndex:
+              returnIndex >= 0
+                ? returnIndex
+                : Math.max(0, Math.min(activePageIndex, pages.length - 1)),
+            zoom: view.zoom,
+            pan: view.pan
+          }
+        : {})
     }
   }
   const reconcileDetailEditor = (
     editing: AppState['detailEditing'],
     detailPages: DetailPage[],
-    areas: Area[]
+    areas: Area[],
+    pages: PageState[],
+    activePageIndex: number
   ): Partial<AppState> =>
-    editing && !detailEditorValid(editing, detailPages, areas) ? closeDetailFields() : {}
+    editing && !detailEditorValid(editing, detailPages, areas)
+      ? closeDetailFields(pages, activePageIndex)
+      : {}
 
   const snapshot = (state: AppState): string => JSON.stringify(toProjectFile(state))
   const editChanged = (a: AppState, b: AppState): boolean =>
@@ -659,7 +699,13 @@ export function createAreaStore(initial?: Partial<AppState>): StoreApi<AreaStore
           areas,
           detailPages,
           selectedAreaId: state.selectedAreaId === id ? null : state.selectedAreaId,
-          ...reconcileDetailEditor(state.detailEditing, detailPages, areas)
+          ...reconcileDetailEditor(
+            state.detailEditing,
+            detailPages,
+            areas,
+            state.pages,
+            state.activePageIndex
+          )
         }
       })
     },
@@ -679,24 +725,37 @@ export function createAreaStore(initial?: Partial<AppState>): StoreApi<AreaStore
         )
         return {
           detailPages,
-          ...reconcileDetailEditor(state.detailEditing, detailPages, state.areas)
+          ...reconcileDetailEditor(
+            state.detailEditing,
+            detailPages,
+            state.areas,
+            state.pages,
+            state.activePageIndex
+          )
         }
       })
     },
     openDetailEditor(name, pageIndex) {
       const state = get()
       if (!detailEditorValid({ name, pageIndex }, state.detailPages, state.areas)) return
+      const displayIndex = state.pages.findIndex((page) => page.pageIndex === pageIndex)
+      if (displayIndex < 0) return
       if (!state.detailEditing) {
         detailReturnView = {
-          activePageIndex: state.activePageIndex,
+          sourcePageIndex: state.pages[state.activePageIndex]?.pageIndex ?? null,
           zoom: state.zoom,
           pan: state.pan
         }
       }
-      set({ detailEditing: { name, pageIndex }, activePageIndex: pageIndex, selectedAreaId: null })
+      set({
+        detailEditing: { name, pageIndex },
+        activePageIndex: displayIndex,
+        selectedAreaId: null
+      })
     },
     closeDetailEditor() {
-      set(closeDetailFields())
+      const state = get()
+      set(closeDetailFields(state.pages, state.activePageIndex))
     },
     setDetailImage(name, pageIndex, image, transform) {
       set((state) => {
@@ -743,7 +802,13 @@ export function createAreaStore(initial?: Partial<AppState>): StoreApi<AreaStore
           detailPages,
           names: withName(state.names, name),
           colors: withNameColor(state.colors, name),
-          ...reconcileDetailEditor(state.detailEditing, detailPages, areas)
+          ...reconcileDetailEditor(
+            state.detailEditing,
+            detailPages,
+            areas,
+            state.pages,
+            state.activePageIndex
+          )
         }
       })
     },
@@ -831,10 +896,18 @@ export function createAreaStore(initial?: Partial<AppState>): StoreApi<AreaStore
               pages.findIndex((p) => p.pageIndex === activeSource)
             )
       const areas = state.areas.filter((area) => area.pageIndex !== sourceIndex)
+      const detailPages = pruneDetailPages({ areas, detailPages: state.detailPages })
       const selectedAreaId = areas.some((area) => area.id === state.selectedAreaId)
         ? state.selectedAreaId
         : null
-      set({ pages, areas, activePageIndex, selectedAreaId })
+      set({
+        pages,
+        areas,
+        detailPages,
+        activePageIndex,
+        selectedAreaId,
+        ...reconcileDetailEditor(state.detailEditing, detailPages, areas, pages, activePageIndex)
+      })
     },
 
     movePage(from, to) {
@@ -1044,7 +1117,13 @@ export function createAreaStore(initial?: Partial<AppState>): StoreApi<AreaStore
           selectedAreaId: st.areas.some((area) => area.id === st.selectedAreaId)
             ? st.selectedAreaId
             : null,
-          ...reconcileDetailEditor(st.detailEditing, st.detailPages, st.areas)
+          ...reconcileDetailEditor(
+            st.detailEditing,
+            st.detailPages,
+            st.areas,
+            st.pages,
+            st.activePageIndex
+          )
         }
       })
       suppressHistory = false
@@ -1069,7 +1148,13 @@ export function createAreaStore(initial?: Partial<AppState>): StoreApi<AreaStore
           selectedAreaId: st.areas.some((area) => area.id === st.selectedAreaId)
             ? st.selectedAreaId
             : null,
-          ...reconcileDetailEditor(st.detailEditing, st.detailPages, st.areas)
+          ...reconcileDetailEditor(
+            st.detailEditing,
+            st.detailPages,
+            st.areas,
+            st.pages,
+            st.activePageIndex
+          )
         }
       })
       suppressHistory = false

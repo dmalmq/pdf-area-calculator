@@ -13,6 +13,7 @@ import {
   areaStore,
   facilitiesOnPage,
   mmPerPtFor,
+  orderedDetailPages,
   selectIsDirty,
   toProjectFile,
   useAreaStore
@@ -201,14 +202,7 @@ function App(): React.JSX.Element {
     try {
       const title = `面積集計 — ${state.fileName ?? 'PDF'}`
       const png = await renderReportPng(state, title)
-      const detailPages = [...state.detailPages].sort((a, b) => {
-        const names = state.names
-        const ai = names.indexOf(a.name)
-        const bi = names.indexOf(b.name)
-        const ra = ai === -1 ? names.length : ai
-        const rb = bi === -1 ? names.length : bi
-        return ra - rb || a.name.localeCompare(b.name) || a.pageIndex - b.pageIndex
-      })
+      const detailPages = orderedDetailPages(state)
       const pdf = await buildReportPdf(
         state.originalBytes,
         png,

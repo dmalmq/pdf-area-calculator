@@ -7,6 +7,7 @@ import {
   detailCandidates,
   facilitiesOnPage,
   nextStoreCode,
+  orderedDetailPages,
   reportByFacility,
   reportByFacilityLevel,
   reportByLevel,
@@ -891,6 +892,20 @@ describe('deletePage', () => {
   })
 })
 
+it('prunes detail pages and closes an editor for the deleted source page', () => {
+  const area = square(1, 'A')
+  const store = createAreaStore({
+    pages,
+    names: ['A'],
+    areas: [area],
+    detailPages: [{ name: 'A', pageIndex: 1, image: 'PNG' }]
+  })
+  store.getState().openDetailEditor('A', 1)
+  store.getState().deletePage(1)
+  expect(store.getState().detailPages).toEqual([])
+  expect(store.getState().detailEditing).toBeNull()
+})
+
 describe('movePage', () => {
   it('reorders pages, keeps the viewed page active, and is undoable', () => {
     const store = createAreaStore({ pages, names: [], areas: [], activePageIndex: 0 })
@@ -1072,6 +1087,31 @@ describe('detailCandidates and enable/disable', () => {
     ])
   })
 
+  it('orders candidates by displayed page order after reorder', () => {
+    const reordered = [pages[1], pages[0]]
+    const store = createAreaStore({
+      pages: reordered,
+      names: ['A'],
+      areas: [square(0, 'A'), square(1, 'A')]
+    })
+    expect(detailCandidates(store.getState()).map((candidate) => candidate.pageIndex)).toEqual([
+      1, 0
+    ])
+  })
+
+  it('orders exported detail pages by facility then displayed page order', () => {
+    const reordered = [pages[1], pages[0]]
+    const store = createAreaStore({
+      pages: reordered,
+      names: ['A'],
+      detailPages: [
+        { name: 'A', pageIndex: 0 },
+        { name: 'A', pageIndex: 1 }
+      ]
+    })
+    expect(orderedDetailPages(store.getState()).map((detail) => detail.pageIndex)).toEqual([1, 0])
+  })
+
   it('lists a store-only combo as a candidate', () => {
     const store = createAreaStore({
       pages,
@@ -1226,6 +1266,19 @@ describe('detail editor and image actions', () => {
     expect(store.getState().selectedAreaId).toBeNull()
   })
 
+  it('resolves a stable source page index to the reordered display cursor', () => {
+    const reordered = [pages[1], pages[0]]
+    const area = square(1, 'A')
+    const store = createAreaStore({
+      pages: reordered,
+      names: ['A'],
+      areas: [area],
+      detailPages: [{ name: 'A', pageIndex: 1 }]
+    })
+    store.getState().openDetailEditor('A', 1)
+    expect(store.getState().activePageIndex).toBe(0)
+  })
+
   it('closes the editor without touching detailPages', () => {
     const store = createAreaStore({
       detailPages: [{ name: 'A', pageIndex: 0 }],
@@ -1263,6 +1316,23 @@ describe('detail editor and image actions', () => {
     expect(store.getState().activePageIndex).toBe(0)
     expect(store.getState().zoom).toBe(1.75)
     expect(store.getState().pan).toEqual({ x: 31, y: 47 })
+  })
+
+  it('restores the return page by source identity after page reorder', () => {
+    const store = createAreaStore({
+      pages,
+      areas: [square(1, 'A')],
+      detailPages: [{ name: 'A', pageIndex: 1 }],
+      activePageIndex: 0,
+      zoom: 1.4,
+      pan: { x: 20, y: 30 }
+    })
+    store.getState().openDetailEditor('A', 1)
+    store.getState().movePage(0, 1)
+    store.getState().closeDetailEditor()
+    expect(store.getState().pages[store.getState().activePageIndex].pageIndex).toBe(0)
+    expect(store.getState().zoom).toBe(1.4)
+    expect(store.getState().pan).toEqual({ x: 20, y: 30 })
   })
 
   it('restores a nonzero same-page camera after editor close', () => {
