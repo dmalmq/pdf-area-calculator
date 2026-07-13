@@ -8,19 +8,27 @@ import {
   type RGB
 } from 'pdf-lib'
 import { DETAIL_IMAGE_OPACITY } from '../utils/detailPage'
+import {
+  clampDetailSummaryPosition,
+  defaultDetailSummaryPosition,
+  detailSummaryMetrics,
+  paddedDetailBounds
+} from '../utils/detailSummary'
+import { t } from '../i18n'
 
 import type {
   Area,
   DetailPage,
   LegendEntry,
   LegendOrientation,
+  PageState,
   Pt,
   StoreLabelMode
 } from '../state/types'
 import { storeTagLabel } from '../state/storeLabel'
 import { colorForName } from '../utils/colors'
 import { detailFit, facilityDetailBBox } from '../geometry/detailFit'
-import { renderDetailHeaderPng } from './detailHeader'
+import { renderDetailSummaryPng } from './detailHeader'
 import { renderLegendPng } from './legendImage'
 import { clampLegendTopLeft, defaultLegendTopLeft } from './legendLayout'
 
@@ -145,12 +153,13 @@ export interface DetailOptions {
   pages: DetailPage[] // caller passes pre-sorted (facility order, then page); order preserved
   areas: Area[]
   pageLabels: string[] // indexed by pageIndex
+  /** Source page state (labels + scales) for detailSummaryMetrics. */
+  sourcePages: PageState[]
 }
 
 const A4_SHORT = 595.28
 const A4_LONG = 841.89
 const DETAIL_MARGIN = 28
-const DETAIL_HEADER_GAP = 10
 
 function base64ToBytes(base64: string): Uint8Array {
   const binary = atob(base64)
@@ -175,18 +184,12 @@ async function drawDetailPages(
     const pageH = landscape ? A4_SHORT : A4_LONG
     const page = doc.addPage([pageW, pageH])
 
-    // Header band across the top; embed it now (need its height for the layout)
-    // but draw it LAST so it sits above everything in the top band.
-    const level = detail.pageLabels[dp.pageIndex] ?? `Page ${dp.pageIndex + 1}`
-    const header = await renderDetailHeaderPng(dp.name, level)
-    const headerImg = await doc.embedPng(header.png)
-
-    // Content area = page minus margins minus the header band. Its bottom-left
-    // in page space is (DETAIL_MARGIN, DETAIL_MARGIN); it sits below the header.
+    // Full-margin content area — the movable summary overlays the fit, so no
+    // reserved header band.
     const contentX = DETAIL_MARGIN
     const contentY = DETAIL_MARGIN
     const contentW = pageW - DETAIL_MARGIN * 2
-    const contentH = pageH - DETAIL_MARGIN * 2 - header.height - DETAIL_HEADER_GAP
+    const contentH = pageH - DETAIL_MARGIN * 2
     const fit = detailFit(bbox, { width: contentW, height: contentH })
 
     // detailFit maps a source PDF point into avail-local coords (origin at the
@@ -248,12 +251,45 @@ async function drawDetailPages(
     )
     drawAreaOverlays(doc, facilityAreas, colors, codeFont, storeLabels, page, mapPt)
 
-    // 3) Header last, on top of the content.
-    page.drawImage(headerImg, {
-      x: DETAIL_MARGIN,
-      y: pageH - DETAIL_MARGIN - header.height,
-      width: header.width,
-      height: header.height
+    // 3) Movable summary card: metrics from facility-level report, size stable
+    // in output points (1 px = 1 pt), only the top-left anchor maps through the fit.
+    const metrics = detailSummaryMetrics(
+      { areas: detail.areas, pages: detail.sourcePages },
+      dp.name,
+      dp.pageIndex
+    )
+    const level =
+      metrics?.level ?? detail.pageLabels[dp.pageIndex] ?? `Page ${dp.pageIndex + 1}`
+    const area =
+      metrics == null || metrics.areaM2 == null
+        ? t('detail.notCalibrated')
+        : `${metrics.areaM2.toFixed(2)} m²`
+    const stores = String(metrics?.stores ?? 0)
+    const summary = await renderDetailSummaryPng({
+      name: dp.name,
+      level,
+      area,
+      stores,
+      labels: {
+        floor: t('detail.summaryFloor'),
+        area: t('detail.summaryArea'),
+        stores: t('detail.summaryStores')
+      }
+    })
+    const summaryImage = await doc.embedPng(summary.png)
+    const sourcePosition = dp.summaryPosition ?? defaultDetailSummaryPosition(bbox)
+    const sourceSize = { w: summary.width / fit.scale, h: summary.height / fit.scale }
+    const clamped = clampDetailSummaryPosition(
+      sourcePosition,
+      paddedDetailBounds(bbox),
+      sourceSize
+    )
+    const mappedTopLeft = mapPt(clamped)
+    page.drawImage(summaryImage, {
+      x: mappedTopLeft.x,
+      y: mappedTopLeft.y - summary.height,
+      width: summary.width,
+      height: summary.height
     })
   }
 }

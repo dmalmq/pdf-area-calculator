@@ -1,10 +1,19 @@
 import { PDFArray, PDFDocument, PDFName, PDFPage, PDFRawStream } from 'pdf-lib'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { Area, DetailPage } from '../state/types'
+import type { Area, DetailPage, PageState } from '../state/types'
+import { localeStore } from '../i18n'
+import { t } from '../i18n'
 
 import { buildReportPdf } from './buildReport'
-import { detailFit } from '../geometry/detailFit'
+import * as detailFitModule from '../geometry/detailFit'
+import { detailFit, facilityDetailBBox } from '../geometry/detailFit'
+import {
+  clampDetailSummaryPosition,
+  defaultDetailSummaryPosition,
+  paddedDetailBounds
+} from '../utils/detailSummary'
 import { inflateSync } from 'node:zlib'
+import * as detailHeader from './detailHeader'
 
 async function firstOverlayDevicePoint(
   bytes: Uint8Array
@@ -55,10 +64,10 @@ const onePixelPng = new Uint8Array([
 ])
 const onePixelBase64 = Buffer.from(onePixelPng).toString('base64')
 
-// The detail header renders through a canvas; the vitest 'node' env has no DOM,
+// The detail summary renders through a canvas; the vitest 'node' env has no DOM,
 // so stub `document` like legendImage.spec does. toBlob yields a REAL 1x1 PNG so
-// pdf-lib's embedPng accepts the header bytes.
-function stubHeaderCanvas(): void {
+// pdf-lib's embedPng accepts the summary bytes.
+function stubSummaryCanvas(): void {
   const ctx = {
     scale: vi.fn(),
     fillRect: vi.fn(),
@@ -91,6 +100,60 @@ function stubHeaderCanvas(): void {
     toBlob: vi.fn((cb: BlobCallback) => cb(new Blob([onePixelPng], { type: 'image/png' })))
   }
   vi.stubGlobal('document', { createElement: vi.fn(() => canvas) })
+}
+
+function sourcePagesFromLabels(pageLabels: string[]): PageState[] {
+  return pageLabels.map((label, pageIndex) => ({
+    pageIndex,
+    label,
+    scale: null
+  }))
+}
+
+const DETAIL_MARGIN = 28
+const A4_SHORT = 595.28
+const A4_LONG = 841.89
+
+/** Known fixed size for module-mocked summary renderer in placement tests. */
+const MOCK_SUMMARY = { png: onePixelPng, width: 120, height: 60 }
+
+function expectedSummaryDraw(
+  area: Area,
+  summaryPosition: { x: number; y: number } | undefined,
+  summarySize: { width: number; height: number } = MOCK_SUMMARY
+): { x: number; y: number; width: number; height: number } {
+  const bbox = facilityDetailBBox([area], area.name, area.pageIndex)!
+  const landscape = bbox.w > bbox.h
+  const pageW = landscape ? A4_LONG : A4_SHORT
+  const pageH = landscape ? A4_SHORT : A4_LONG
+  const contentX = DETAIL_MARGIN
+  const contentY = DETAIL_MARGIN
+  const contentW = pageW - DETAIL_MARGIN * 2
+  const contentH = pageH - DETAIL_MARGIN * 2
+  const fit = detailFit(bbox, { width: contentW, height: contentH })
+  const padX = bbox.w * 0.05
+  const padY = bbox.h * 0.05
+  const mapPt = (p: { x: number; y: number }): { x: number; y: number } => ({
+    x: contentX + (p.x - (bbox.x - padX)) * fit.scale + fit.offsetX,
+    y: contentY + (p.y - (bbox.y - padY)) * fit.scale + fit.offsetY
+  })
+  const sourcePosition = summaryPosition ?? defaultDetailSummaryPosition(bbox)
+  const sourceSize = {
+    w: summarySize.width / fit.scale,
+    h: summarySize.height / fit.scale
+  }
+  const clamped = clampDetailSummaryPosition(
+    sourcePosition,
+    paddedDetailBounds(bbox),
+    sourceSize
+  )
+  const mappedTopLeft = mapPt(clamped)
+  return {
+    x: mappedTopLeft.x,
+    y: mappedTopLeft.y - summarySize.height,
+    width: summarySize.width,
+    height: summarySize.height
+  }
 }
 
 const wideFacility: Area = {
@@ -251,16 +314,18 @@ describe('buildReportPdf detail pages', () => {
   })
 
   it('inserts detail pages between the originals and the summary, preserving input order', async () => {
-    stubHeaderCanvas()
+    stubSummaryCanvas()
     const source = await PDFDocument.create()
     source.addPage([400, 400])
+    const pageLabels = ['1F']
     const detail = {
       pages: [
         { name: 'エスパル仙台本館', pageIndex: 0 },
         { name: 'AER', pageIndex: 0 }
       ] as DetailPage[],
       areas: [wideFacility, tallFacility],
-      pageLabels: ['1F']
+      pageLabels,
+      sourcePages: sourcePagesFromLabels(pageLabels)
     }
 
     const out = await buildReportPdf(
@@ -288,13 +353,15 @@ describe('buildReportPdf detail pages', () => {
   })
 
   it('orients a detail page landscape when its facility bbox is wider than tall', async () => {
-    stubHeaderCanvas()
+    stubSummaryCanvas()
     const source = await PDFDocument.create()
     source.addPage([400, 400])
+    const pageLabels = ['1F']
     const detail = {
       pages: [{ name: 'エスパル仙台本館', pageIndex: 0 }] as DetailPage[],
       areas: [wideFacility],
-      pageLabels: ['1F']
+      pageLabels,
+      sourcePages: sourcePagesFromLabels(pageLabels)
     }
 
     const pages = (
@@ -316,13 +383,15 @@ describe('buildReportPdf detail pages', () => {
   })
 
   it('skips detail entries whose facility has no polygons on the page', async () => {
-    stubHeaderCanvas()
+    stubSummaryCanvas()
     const source = await PDFDocument.create()
     source.addPage([400, 400])
+    const pageLabels = ['1F']
     const detail = {
       pages: [{ name: '存在しない施設', pageIndex: 0 }] as DetailPage[],
       areas: [wideFacility],
-      pageLabels: ['1F']
+      pageLabels,
+      sourcePages: sourcePagesFromLabels(pageLabels)
     }
 
     const pages = (
@@ -345,13 +414,15 @@ describe('buildReportPdf detail pages', () => {
   })
 
   it('renders a vector-only detail page when the entry has no image', async () => {
-    stubHeaderCanvas()
+    stubSummaryCanvas()
     const source = await PDFDocument.create()
     source.addPage([400, 400])
+    const pageLabels = ['1F']
     const detail = {
       pages: [{ name: 'エスパル仙台本館', pageIndex: 0 }] as DetailPage[],
       areas: [wideFacility],
-      pageLabels: ['1F']
+      pageLabels,
+      sourcePages: sourcePagesFromLabels(pageLabels)
     }
 
     const pages = (
@@ -374,14 +445,16 @@ describe('buildReportPdf detail pages', () => {
   })
 
   it('embeds the background image when the entry has one', async () => {
-    stubHeaderCanvas()
+    stubSummaryCanvas()
     const source = await PDFDocument.create()
     source.addPage([400, 400])
     const originalBytes = await source.save()
+    const pageLabels = ['1F']
     const base = {
       pages: [{ name: 'エスパル仙台本館', pageIndex: 0 }] as DetailPage[],
       areas: [wideFacility],
-      pageLabels: ['1F']
+      pageLabels,
+      sourcePages: sourcePagesFromLabels(pageLabels)
     }
     const withImage = {
       ...base,
@@ -405,7 +478,7 @@ describe('buildReportPdf detail pages', () => {
       [],
       base
     )
-    stubHeaderCanvas()
+    stubSummaryCanvas()
     const img = await buildReportPdf(
       originalBytes,
       onePixelPng,
@@ -422,10 +495,11 @@ describe('buildReportPdf detail pages', () => {
   })
 
   it('draws the detail background with the shared preview opacity', async () => {
-    stubHeaderCanvas()
+    stubSummaryCanvas()
     const drawImage = vi.spyOn(PDFPage.prototype, 'drawImage')
     const source = await PDFDocument.create()
     source.addPage([400, 400])
+    const pageLabels = ['1F']
     const detail = {
       pages: [
         {
@@ -436,7 +510,8 @@ describe('buildReportPdf detail pages', () => {
         }
       ] as DetailPage[],
       areas: [wideFacility],
-      pageLabels: ['1F']
+      pageLabels,
+      sourcePages: sourcePagesFromLabels(pageLabels)
     }
 
     await buildReportPdf(await source.save(), onePixelPng, [], {}, undefined, undefined, [], detail)
@@ -459,5 +534,138 @@ describe('buildReportPdf detail pages', () => {
     const mapped = map(center)
     expect(mapped.x).toBeCloseTo(avail.width / 2)
     expect(mapped.y).toBeCloseTo(avail.height / 2)
+  })
+
+  it('uses an explicit source-space summary position and does not reserve a fixed header band', async () => {
+    const summaryRenderer = vi
+      .spyOn(detailHeader, 'renderDetailSummaryPng')
+      .mockResolvedValue(MOCK_SUMMARY)
+    const detailFitSpy = vi.spyOn(detailFitModule, 'detailFit')
+    const drawImage = vi.spyOn(PDFPage.prototype, 'drawImage')
+    const source = await PDFDocument.create()
+    source.addPage([400, 400])
+    const sourceBytes = await source.save()
+    const facilityA: Area = { ...wideFacility, id: 'a', name: 'A' }
+    const areas = [facilityA]
+    const pageLabels = ['1F']
+    const summaryPosition = { x: 25, y: 90 }
+    const detailPage = {
+      name: 'A',
+      pageIndex: 0,
+      summaryPosition
+    } as DetailPage
+    // Landscape A4 for wide facility: 841.89 x 595.28
+    const detailPageWidth = A4_LONG
+    const detailPageHeight = A4_SHORT
+
+    const bytes = await buildReportPdf(
+      sourceBytes,
+      onePixelPng,
+      areas,
+      {},
+      undefined,
+      { mode: 'code', prefixes: {} },
+      [0],
+      {
+        pages: [detailPage],
+        areas,
+        pageLabels,
+        sourcePages: sourcePagesFromLabels(pageLabels)
+      }
+    )
+    const output = await PDFDocument.load(bytes)
+    expect(output.getPageCount()).toBe(3)
+    expect(summaryRenderer).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'A', level: '1F', stores: '0' })
+    )
+    expect(detailFitSpy).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        width: expect.closeTo(detailPageWidth - 56),
+        height: expect.closeTo(detailPageHeight - 56)
+      })
+    )
+    const expected = expectedSummaryDraw(facilityA, summaryPosition)
+    const summaryCall = drawImage.mock.calls.find(
+      ([, options]) =>
+        options?.width === expected.width && options?.height === expected.height
+    )
+    expect(summaryCall).toBeDefined()
+    expect(summaryCall![1]?.x).toBeCloseTo(expected.x)
+    expect(summaryCall![1]?.y).toBeCloseTo(expected.y)
+  })
+
+  it('uses the deterministic default summary position without mutating DetailPage', async () => {
+    vi.spyOn(detailHeader, 'renderDetailSummaryPng').mockResolvedValue(MOCK_SUMMARY)
+    const drawImage = vi.spyOn(PDFPage.prototype, 'drawImage')
+    const source = await PDFDocument.create()
+    source.addPage([400, 400])
+    const facilityA: Area = { ...wideFacility, id: 'a', name: 'A' }
+    const areas = [facilityA]
+    const pageLabels = ['1F']
+    const detail = { name: 'A', pageIndex: 0 } as DetailPage
+    await buildReportPdf(
+      await source.save(),
+      onePixelPng,
+      areas,
+      {},
+      undefined,
+      { mode: 'code', prefixes: {} },
+      [0],
+      {
+        pages: [detail],
+        areas,
+        pageLabels,
+        sourcePages: sourcePagesFromLabels(pageLabels)
+      }
+    )
+    expect(detail).toEqual({ name: 'A', pageIndex: 0 })
+    const expected = expectedSummaryDraw(facilityA, undefined)
+    const summaryCall = drawImage.mock.calls.find(
+      ([, options]) =>
+        options?.width === expected.width && options?.height === expected.height
+    )
+    expect(summaryCall).toBeDefined()
+    expect(summaryCall![1]?.x).toBeCloseTo(expected.x)
+    expect(summaryCall![1]?.y).toBeCloseTo(expected.y)
+  })
+
+  it('labels an uncalibrated detail summary instead of reporting pt² as m²', async () => {
+    stubSummaryCanvas()
+    const previousLocale = localeStore.getState().locale
+    localeStore.getState().setLocale('en')
+    try {
+      const summaryRenderer = vi.spyOn(detailHeader, 'renderDetailSummaryPng')
+      const source = await PDFDocument.create()
+      source.addPage([400, 400])
+      const pageLabels = ['1F']
+      const detail = {
+        pages: [{ name: 'エスパル仙台本館', pageIndex: 0 }] as DetailPage[],
+        areas: [wideFacility],
+        pageLabels,
+        // scale: null → uncalibrated
+        sourcePages: sourcePagesFromLabels(pageLabels)
+      }
+
+      await buildReportPdf(
+        await source.save(),
+        onePixelPng,
+        [],
+        {},
+        undefined,
+        undefined,
+        [],
+        detail
+      )
+
+      expect(summaryRenderer).toHaveBeenCalledWith(
+        expect.objectContaining({ area: t('detail.notCalibrated') })
+      )
+      expect(summaryRenderer).toHaveBeenCalledWith(
+        expect.objectContaining({ area: 'Not calibrated' })
+      )
+    } finally {
+      localeStore.getState().setLocale(previousLocale)
+    }
   })
 })

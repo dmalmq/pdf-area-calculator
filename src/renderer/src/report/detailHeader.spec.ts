@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { renderDetailHeaderPng } from './detailHeader'
+import { renderDetailSummaryPng } from './detailHeader'
 
 // Canvas stub: measureText width scales with text length; fillText calls are
-// collected so we can assert the strip drew both the name and the level.
+// collected so we can assert the summary drew name, metrics, and labels.
 function setupCanvas(): { drawnText: string[] } {
   const drawnText: string[] = []
   const ctx = {
@@ -43,20 +43,77 @@ function setupCanvas(): { drawnText: string[] } {
   return { drawnText }
 }
 
-describe('renderDetailHeaderPng', () => {
+describe('renderDetailSummaryPng', () => {
   afterEach(() => vi.unstubAllGlobals())
 
-  it('renders a non-empty PNG strip with plausible dimensions', async () => {
+  it('draws facility, floor, area, stores, and table headings', async () => {
     const { drawnText } = setupCanvas()
-
-    const out = await renderDetailHeaderPng('エスパル仙台本館', '1F')
+    const out = await renderDetailSummaryPng({
+      name: 'エスパル仙台本館',
+      level: 'B1F',
+      area: '1,284.50 m²',
+      stores: '33',
+      labels: { floor: 'Floor', area: 'Area', stores: 'Stores' }
+    })
 
     expect(out.png.length).toBeGreaterThan(0)
-    expect(out.width).toBeGreaterThan(0)
-    expect(out.height).toBeGreaterThan(0)
-    // A header is a wide, short strip.
     expect(out.width).toBeGreaterThan(out.height)
-    expect(drawnText).toContain('エスパル仙台本館')
-    expect(drawnText.some((s) => s.includes('1F'))).toBe(true)
+    expect(drawnText).toEqual(
+      expect.arrayContaining([
+        'エスパル仙台本館',
+        'B1F',
+        '1,284.50 m²',
+        '33',
+        'Floor',
+        'Area',
+        'Stores'
+      ])
+    )
+  })
+
+  it('draws the explicit uncalibrated value', async () => {
+    const { drawnText } = setupCanvas()
+    await renderDetailSummaryPng({
+      name: 'Central Mall',
+      level: '2F',
+      area: 'Not calibrated',
+      stores: '0',
+      labels: { floor: 'Floor', area: 'Area', stores: 'Stores' }
+    })
+    expect(drawnText).toContain('Not calibrated')
+  })
+
+  it('wraps a long facility name within the maximum width', async () => {
+    setupCanvas()
+    const out = await renderDetailSummaryPng({
+      name: 'A very long facility name that cannot fit on one line without wrapping',
+      level: '4F',
+      area: '8,200.00 m²',
+      stores: '91',
+      labels: { floor: 'Floor', area: 'Area', stores: 'Stores' },
+      maxWidth: 320
+    })
+    expect(out.width).toBeLessThanOrEqual(320)
+    expect(out.height).toBeGreaterThan(60)
+  })
+
+  it('hard-breaks an unbreakable overwide token without exceeding maxWidth', async () => {
+    const { drawnText } = setupCanvas()
+    // Spaced string with one token wider than the card: word-wrap must hard-break it.
+    const long = 'X'.repeat(80)
+    const out = await renderDetailSummaryPng({
+      name: `Prefix ${long} Suffix`,
+      level: '1F',
+      area: '10.00 m²',
+      stores: '1',
+      labels: { floor: 'Floor', area: 'Area', stores: 'Stores' },
+      maxWidth: 200
+    })
+    expect(out.width).toBeLessThanOrEqual(200)
+    const xFragments = drawnText.filter((s) => /^X+$/.test(s))
+    expect(xFragments.length).toBeGreaterThan(1)
+    for (const frag of xFragments) {
+      expect(frag.length * 8).toBeLessThanOrEqual(200 - 24)
+    }
   })
 })

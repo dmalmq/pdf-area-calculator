@@ -223,7 +223,8 @@ function App(): React.JSX.Element {
           pageLabels: state.pages.reduce<string[]>((labels, page) => {
             labels[page.pageIndex] = page.label
             return labels
-          }, [])
+          }, []),
+          sourcePages: state.pages
         }
       )
       const defaultName = `${withoutExt(state.fileName ?? 'pdf')}_areas.pdf`
