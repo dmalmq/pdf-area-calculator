@@ -10,7 +10,6 @@ import {
   shouldUseNativeDetailPaste,
   summaryPositionAfterDrag,
   summarySourceOffsetsFromCss,
-  summarySourceSizeFromCss,
   tryImportDetailImage,
   viewportImageMetrics
 } from './detailView'
@@ -78,9 +77,17 @@ describe('detail summary interaction decisions', () => {
 
   it('maps CSS summary size through a rotated viewport into source extents', () => {
     // 90° transform [0, 2, 2, 0, …]: screen width → source y, screen height → source x.
-    expect(summarySourceSizeFromCss(100, 40, 1, [0, 2, 2, 0, 0, 0])).toEqual({ w: 20, h: 50 })
+    const rotated = summarySourceOffsetsFromCss(100, 40, 1, [0, 2, 2, 0, 0, 0])
+    expect({ w: rotated.dxMax - rotated.dxMin, h: rotated.dyMax - rotated.dyMin }).toEqual({
+      w: 20,
+      h: 50
+    })
     // Unrotated scale 2, zoom 2: CSS/(scale*zoom).
-    expect(summarySourceSizeFromCss(100, 40, 2, [2, 0, 0, -2, 0, 400])).toEqual({ w: 25, h: 10 })
+    const upright = summarySourceOffsetsFromCss(100, 40, 2, [2, 0, 0, -2, 0, 400])
+    expect({ w: upright.dxMax - upright.dxMin, h: upright.dyMax - upright.dyMin }).toEqual({
+      w: 25,
+      h: 10
+    })
   })
 
   it('clamps a rotated top-edge anchor so the CSS box stays inside padded bounds', () => {
@@ -101,8 +108,8 @@ describe('detail summary interaction decisions', () => {
 
   it('keeps a 90-degree default top-left anchor fully inside padded bounds', () => {
     const bounds = { x: 80, y: 190, w: 440, h: 220 }
-    // Measured card size in CSS px; zoom 1, 90° viewport.
-    const offsets = summarySourceOffsetsFromCss(280, 85, 1, [0, 2, 2, 0, 0, 0])
+    // Live HTML card size (larger than PNG layout) at zoom 1, 90° viewport.
+    const offsets = summarySourceOffsetsFromCss(300, 120, 1, [0, 2, 2, 0, 0, 0])
     const defaultTopLeft = { x: bounds.x, y: bounds.y + bounds.h }
     const displayed = clampDetailSummaryAnchor(defaultTopLeft, bounds, offsets)
     expect(displayed.x + offsets.dxMin).toBeGreaterThanOrEqual(bounds.x)

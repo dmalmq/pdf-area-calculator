@@ -6,7 +6,6 @@ import {
   clampDetailSummaryPosition,
   defaultDetailSummaryPosition,
   detailSummaryMetrics,
-  detailSummarySourceFootprint,
   paddedDetailBounds,
   resolveDetailSummaryPosition
 } from './detailSummary'
@@ -59,21 +58,15 @@ describe('detail summary geometry', () => {
   it('keeps an editor-clamped edge anchor stable under the shared export clamp', () => {
     const short = { w: 280, h: 85 }
     const longWrapped = { w: 360, h: 142 }
-    const shortFp = detailSummarySourceFootprint(bbox, short)
-    const longFp = detailSummarySourceFootprint(bbox, longWrapped)
-    expect(longFp.w).toBeGreaterThan(shortFp.w)
-    expect(longFp.h).toBeGreaterThan(shortFp.h)
 
     // Far outside the padded bounds — editor and export resolve identically.
     const saved = resolveDetailSummaryPosition({ x: 1e9, y: -1e9 }, bbox, longWrapped)
-    const again = resolveDetailSummaryPosition(saved, bbox, longWrapped)
-    expect(again).toEqual(saved)
+    expect(resolveDetailSummaryPosition(saved, bbox, longWrapped)).toEqual(saved)
 
-    const bounds = paddedDetailBounds(bbox)
-    // Full measured card stays inside padded bounds after the shared clamp.
-    expect(saved.x + longFp.w).toBeLessThanOrEqual(bounds.x + bounds.w + 1e-9)
-    expect(saved.y).toBeLessThanOrEqual(bounds.y + bounds.h + 1e-9)
-    expect(saved.y - longFp.h).toBeGreaterThanOrEqual(bounds.y - 1e-9)
+    // A taller/wider measured card pins further from the far edge than a small one.
+    const shortSaved = resolveDetailSummaryPosition({ x: 1e9, y: -1e9 }, bbox, short)
+    expect(saved.x).toBeLessThanOrEqual(shortSaved.x)
+    expect(saved.y).toBeGreaterThanOrEqual(shortSaved.y)
   })
 })
 

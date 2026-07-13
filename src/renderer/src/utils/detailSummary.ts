@@ -9,8 +9,7 @@ export interface DetailSummaryMetrics {
   stores: number
 }
 
-/** Matches buildReport detail page margin (PDF points). */
-export const DETAIL_PAGE_MARGIN = 28
+const DETAIL_PAGE_MARGIN = 28
 const A4_SHORT = 595.28
 const A4_LONG = 841.89
 
@@ -46,8 +45,7 @@ export function clampDetailSummaryPosition(
   }
 }
 
-/** A4 content box used by detail export for the given facility bbox orientation. */
-export function detailPageContentSize(bbox: BBox): { width: number; height: number } {
+function detailPageContentSize(bbox: BBox): { width: number; height: number } {
   const landscape = bbox.w > bbox.h
   const pageW = landscape ? A4_LONG : A4_SHORT
   const pageH = landscape ? A4_SHORT : A4_LONG
@@ -57,8 +55,7 @@ export function detailPageContentSize(bbox: BBox): { width: number; height: numb
   }
 }
 
-/** Source-space footprint of a summary card: measured output points ÷ detailFit scale. */
-export function detailSummarySourceFootprint(
+function detailSummarySourceFootprint(
   bbox: BBox,
   outputSize: { w: number; h: number }
 ): { w: number; h: number } {

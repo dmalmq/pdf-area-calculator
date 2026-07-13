@@ -109,16 +109,6 @@ export function summarySourceOffsetsFromCss(
   }
 }
 
-/** Axis-aligned PDF extents of a CSS-axis-aligned summary under a viewport transform. */
-export function summarySourceSizeFromCss(
-  cssW: number,
-  cssH: number,
-  zoom: number,
-  transform: ViewportTransform
-): { w: number; h: number } {
-  const { dxMin, dxMax, dyMin, dyMax } = summarySourceOffsetsFromCss(cssW, cssH, zoom, transform)
-  return { w: dxMax - dxMin, h: dyMax - dyMin }
-}
 
 /**
  * Clamp a summary top-left anchor so the CSS box (via signed source offsets) stays

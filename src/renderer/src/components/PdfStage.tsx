@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { PageViewport } from 'pdfjs-dist'
 
 import { pointInArea, shoelacePt2 } from '../geometry/area'
@@ -280,6 +280,7 @@ export function PdfStage({
   const [drag, setDrag] = useState<DragState | null>(null)
   const summaryRef = useRef<HTMLDivElement>(null)
   const summaryDragRef = useRef<{ pointerId: number } | null>(null)
+  const [summaryDomPx, setSummaryDomPx] = useState({ w: 0, h: 0 })
   const imageCache = useRef<Map<string, HTMLImageElement>>(new Map())
   const imageErrors = useRef<Set<string>>(new Set())
   const [imageEpoch, setImageEpoch] = useState(0)
@@ -360,14 +361,21 @@ export function PdfStage({
   }, [detailBBox, rawSummaryPosition, summaryOutputSize])
 
   // Render-time only: keep the screen-aligned CSS card inside padded bounds on
-  // rotated viewports. Does not change the persisted value.
+  // rotated viewports using the live DOM card size (not the PNG layout size).
+  // Does not change the persisted value.
   const displaySummaryPosition = useMemo(() => {
-    if (!persistedSummaryPosition || !detailBBox || !summaryOutputSize || !viewport) {
+    if (
+      !persistedSummaryPosition ||
+      !detailBBox ||
+      !viewport ||
+      summaryDomPx.w <= 0 ||
+      summaryDomPx.h <= 0
+    ) {
       return persistedSummaryPosition
     }
     const offsets = summarySourceOffsetsFromCss(
-      summaryOutputSize.w,
-      summaryOutputSize.h,
+      summaryDomPx.w,
+      summaryDomPx.h,
       zoom,
       viewport.transform as ViewportTransform
     )
@@ -376,7 +384,17 @@ export function PdfStage({
       paddedDetailBounds(detailBBox),
       offsets
     )
-  }, [detailBBox, persistedSummaryPosition, summaryOutputSize, viewport, zoom])
+  }, [detailBBox, persistedSummaryPosition, summaryDomPx.h, summaryDomPx.w, viewport, zoom])
+
+  useLayoutEffect(() => {
+    const el = summaryRef.current
+    if (!el || !detailEditing || !summaryMetrics) {
+      setSummaryDomPx((prev) => (prev.w === 0 && prev.h === 0 ? prev : { w: 0, h: 0 }))
+      return
+    }
+    const next = { w: el.offsetWidth, h: el.offsetHeight }
+    setSummaryDomPx((prev) => (prev.w === next.w && prev.h === next.h ? prev : next))
+  }, [detailEditing, displaySummaryPosition, summaryMetrics, summaryRenderInput, zoom])
 
   const summaryCssPosition = useMemo(() => {
     if (!displaySummaryPosition || !viewport) return null
