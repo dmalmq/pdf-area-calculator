@@ -1,9 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { PageViewport } from 'pdfjs-dist'
 
 import { pointInArea, shoelacePt2 } from '../geometry/area'
 import { facilityDetailBBox } from '../geometry/detailFit'
 import {
+  clampDetailSummaryAnchor,
+  detailKeyboardDelta,
   detailPointerIntent,
   detailFrame,
   inverseImagePoint,
@@ -11,11 +13,19 @@ import {
   pointInImageRect,
   scaleDetailAboutCursor,
   shouldDrawDetailTag,
+  summaryPositionAfterDrag,
+  summarySourceOffsetsFromCss,
   tryImportDetailImage,
   viewportImageMetrics,
+  type SummarySourceOffsets,
   type ViewportTransform
 } from './detailView'
 import { DETAIL_IMAGE_OPACITY } from '../utils/detailPage'
+import {
+  defaultDetailSummaryPosition,
+  detailSummaryMetrics,
+  paddedDetailBounds
+} from '../utils/detailSummary'
 import {
   areaM2,
   areaStore,
@@ -48,7 +58,7 @@ interface PdfStageProps {
 }
 
 interface DragState {
-  kind: 'pan' | 'vertex' | 'area' | 'legend' | 'label' | 'detailImage'
+  kind: 'pan' | 'vertex' | 'area' | 'legend' | 'label' | 'detailImage' | 'detailSummary'
   startClient: Pt
   startPan: Pt
   areaId?: string
@@ -59,6 +69,8 @@ interface DragState {
   startLegendPos?: Pt
   startLabelOffset?: Pt
   startTransform?: DetailTransform
+  startPosition?: Pt
+  pointerId?: number
   moved: boolean
 }
 
@@ -205,6 +217,15 @@ export function constrainDelta(delta: Pt, lockAxis: boolean): Pt {
   return Math.abs(delta.x) >= Math.abs(delta.y) ? { x: delta.x, y: 0 } : { x: 0, y: delta.y }
 }
 
+/** Keep the previous size object when values match so measure effects do not re-render forever. */
+export function nextSummaryDomPx(
+  prev: { w: number; h: number },
+  measured: { w: number; h: number } | null
+): { w: number; h: number } {
+  const next = measured ?? { w: 0, h: 0 }
+  return prev.w === next.w && prev.h === next.h ? prev : next
+}
+
 export function PdfStage({
   calibrationDraft,
   onCalibrationPoint,
@@ -256,6 +277,7 @@ export function PdfStage({
   const closeDetailEditor = useAreaStore((s) => s.closeDetailEditor)
   const setDetailImage = useAreaStore((s) => s.setDetailImage)
   const setDetailTransform = useAreaStore((s) => s.setDetailTransform)
+  const setDetailSummaryPosition = useAreaStore((s) => s.setDetailSummaryPosition)
   const [viewport, setViewport] = useState<PageViewport | null>(null)
   const [draft, setDraft] = useState<Pt[]>([])
   const [hoverPt, setHoverPt] = useState<Pt | null>(null)
@@ -263,6 +285,9 @@ export function PdfStage({
     null
   )
   const [drag, setDrag] = useState<DragState | null>(null)
+  const summaryRef = useRef<HTMLDivElement>(null)
+  const summaryDragRef = useRef<{ pointerId: number } | null>(null)
+  const [summaryDomPx, setSummaryDomPx] = useState({ w: 0, h: 0 })
   const imageCache = useRef<Map<string, HTMLImageElement>>(new Map())
   const imageErrors = useRef<Set<string>>(new Set())
   const [imageEpoch, setImageEpoch] = useState(0)
@@ -289,6 +314,71 @@ export function PdfStage({
         dp.name === detailEditing.name &&
         dp.pageIndex === detailEditing.pageIndex
     ) ?? null
+
+  const detailBBox = useMemo(() => {
+    if (!detailEditing) return null
+    return facilityDetailBBox(areas, detailEditing.name, detailEditing.pageIndex)
+  }, [areas, detailEditing])
+
+  const summaryMetrics = useMemo(() => {
+    if (!detailEditing) return null
+    return detailSummaryMetrics(
+      { areas, pages },
+      detailEditing.name,
+      detailEditing.pageIndex
+    )
+  }, [areas, pages, detailEditing])
+
+  const rawSummaryPosition = useMemo(() => {
+    if (!detailBBox) return null
+    return currentDetail?.summaryPosition ?? defaultDetailSummaryPosition(detailBBox)
+  }, [currentDetail?.summaryPosition, detailBBox])
+
+  const summarySourceOffsets = useMemo((): SummarySourceOffsets => {
+    if (!viewport || zoom === 0 || summaryDomPx.w <= 0 || summaryDomPx.h <= 0) {
+      return { dxMin: 0, dxMax: 0, dyMin: 0, dyMax: 0 }
+    }
+    return summarySourceOffsetsFromCss(
+      summaryDomPx.w,
+      summaryDomPx.h,
+      zoom,
+      viewport.transform as ViewportTransform
+    )
+  }, [summaryDomPx.h, summaryDomPx.w, viewport, zoom])
+
+  const effectiveSummaryPosition = useMemo(() => {
+    if (!rawSummaryPosition || !detailBBox) return null
+    if (summaryDomPx.w <= 0 || summaryDomPx.h <= 0) return rawSummaryPosition
+    return clampDetailSummaryAnchor(
+      rawSummaryPosition,
+      paddedDetailBounds(detailBBox),
+      summarySourceOffsets
+    )
+  }, [detailBBox, rawSummaryPosition, summaryDomPx.h, summaryDomPx.w, summarySourceOffsets])
+
+  const summaryCssPosition = useMemo(() => {
+    if (!effectiveSummaryPosition || !viewport) return null
+    const [vx, vy] = viewport.convertToViewportPoint(
+      effectiveSummaryPosition.x,
+      effectiveSummaryPosition.y
+    )
+    // Stage CSS size is viewport*zoom; canvases fill 100%, so CSS = viewport * zoom.
+    return { x: vx * zoom, y: vy * zoom }
+  }, [effectiveSummaryPosition, viewport, zoom])
+
+  useLayoutEffect(() => {
+    const el = summaryRef.current
+    // Do not depend on `t`: useT() returns a new function each render and would
+    // re-fire this effect every frame. Locale-driven content width changes already
+    // re-measure via summaryMetrics identity.
+    if (!el || !detailEditing || !summaryMetrics) {
+      setSummaryDomPx((prev) => nextSummaryDomPx(prev, null))
+      return
+    }
+    setSummaryDomPx((prev) =>
+      nextSummaryDomPx(prev, { w: el.offsetWidth, h: el.offsetHeight })
+    )
+  }, [detailEditing, summaryMetrics, zoom, rawSummaryPosition])
 
   // HTMLImageElement decoded from raw base64, cached by the base64 string. Returns the
   // element once decoded (so the draw path can size it); a fresh element triggers one
@@ -867,7 +957,20 @@ export function PdfStage({
         )
         imageHit = pointInImageRect(local, img.naturalWidth, img.naturalHeight)
       }
-      const intent = detailPointerIntent(true, event.button, tool, imageHit)
+      const summaryEl = summaryRef.current
+      const summaryRect = summaryEl?.getBoundingClientRect()
+      const summaryHit =
+        summaryRect != null &&
+        event.clientX >= summaryRect.left &&
+        event.clientX <= summaryRect.right &&
+        event.clientY >= summaryRect.top &&
+        event.clientY <= summaryRect.bottom
+      const intent = detailPointerIntent(true, event.button, tool, imageHit, summaryHit)
+      if (intent === 'detailSummary') {
+        // Summary overlay owns this hit; never start an image drag under it.
+        canvas.releasePointerCapture(event.pointerId)
+        return
+      }
       if (intent === 'detailImage' && transform) {
         flushWheelBatch()
         beginInteraction()
@@ -884,7 +987,7 @@ export function PdfStage({
       }
       return
     }
-    if (detailPointerIntent(false, event.button, tool, false) === 'pan') {
+    if (detailPointerIntent(false, event.button, tool, false, false) === 'pan') {
       startPanDrag()
       return
     }
@@ -1091,12 +1194,136 @@ export function PdfStage({
       }
       setDrag({ ...drag, moved })
     }
+
+    if (
+      drag.kind === 'detailSummary' &&
+      drag.startPt &&
+      drag.startPosition &&
+      detailEditing &&
+      detailBBox
+    ) {
+      if (drag.pointerId != null && event.pointerId !== drag.pointerId) return
+      if (moved) {
+        const candidate = summaryPositionAfterDrag(drag.startPosition, drag.startPt, pdfPt)
+        const clamped = clampDetailSummaryAnchor(
+          candidate,
+          paddedDetailBounds(detailBBox),
+          summaryOffsetsInSourcePoints()
+        )
+        setDetailSummaryPosition(detailEditing.name, detailEditing.pageIndex, clamped)
+      }
+      setDrag({ ...drag, moved })
+    }
   }
 
   const onPointerUp = (event: React.PointerEvent<HTMLCanvasElement>): void => {
     overlayRef.current?.releasePointerCapture(event.pointerId)
     setDrag(null)
     endInteraction()
+  }
+
+  const summaryOffsetsInSourcePoints = (): SummarySourceOffsets => {
+    const el = summaryRef.current
+    if (!viewport || zoom === 0) return summarySourceOffsets
+    if (!el) return summarySourceOffsets
+    return summarySourceOffsetsFromCss(
+      el.offsetWidth,
+      el.offsetHeight,
+      zoom,
+      viewport.transform as ViewportTransform
+    )
+  }
+
+  // Idempotent: pointerup/cancel/lostcapture/unmount/detail-exit all share this so
+  // Escape mid-drag (overlay unmount) never leaves beginInteraction open.
+  const finishSummaryDrag = useCallback((): void => {
+    if (summaryDragRef.current == null) return
+    summaryDragRef.current = null
+    setDrag((current) => (current?.kind === 'detailSummary' ? null : current))
+    endInteraction()
+  }, [endInteraction])
+
+  useEffect(() => () => finishSummaryDrag(), [finishSummaryDrag])
+
+  // Overlay is conditional on detailEditing; component unmount cleanup alone misses Escape.
+  useEffect(() => {
+    if (!detailEditing) finishSummaryDrag()
+  }, [detailEditing, finishSummaryDrag])
+
+  const onSummaryPointerDown = (event: React.PointerEvent<HTMLDivElement>): void => {
+    if (event.button !== 0) return
+    if (!detailEditing || !viewport || !overlayRef.current || !effectiveSummaryPosition) return
+    if (summaryDragRef.current != null) return
+    event.stopPropagation()
+    event.preventDefault()
+    flushWheelBatch()
+    event.currentTarget.focus()
+    event.currentTarget.setPointerCapture(event.pointerId)
+    summaryDragRef.current = { pointerId: event.pointerId }
+    beginInteraction()
+    const startPt = eventToPdfPt(event.nativeEvent, overlayRef.current, viewport)
+    setDrag({
+      kind: 'detailSummary',
+      startClient: { x: event.clientX, y: event.clientY },
+      startPan: pan,
+      startPt,
+      startPosition: effectiveSummaryPosition,
+      pointerId: event.pointerId,
+      moved: false
+    })
+  }
+
+  const onSummaryPointerMove = (event: React.PointerEvent<HTMLDivElement>): void => {
+    if (!drag || drag.kind !== 'detailSummary' || !drag.startPt || !drag.startPosition) return
+    if (drag.pointerId != null && event.pointerId !== drag.pointerId) return
+    if (!detailEditing || !viewport || !overlayRef.current || !detailBBox) return
+    const pdfPt = eventToPdfPt(event.nativeEvent, overlayRef.current, viewport)
+    const moved =
+      drag.moved || distance(drag.startClient, { x: event.clientX, y: event.clientY }) > 2
+    if (moved) {
+      const candidate = summaryPositionAfterDrag(drag.startPosition, drag.startPt, pdfPt)
+      const clamped = clampDetailSummaryAnchor(
+        candidate,
+        paddedDetailBounds(detailBBox),
+        summaryOffsetsInSourcePoints()
+      )
+      setDetailSummaryPosition(detailEditing.name, detailEditing.pageIndex, clamped)
+    }
+    setDrag({ ...drag, moved })
+  }
+
+  const onSummaryPointerUp = (event: React.PointerEvent<HTMLDivElement>): void => {
+    const active = summaryDragRef.current
+    if (active != null && event.pointerId !== active.pointerId) return
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId)
+    }
+    finishSummaryDrag()
+  }
+
+  const onSummaryLostPointerCapture = (event: React.PointerEvent<HTMLDivElement>): void => {
+    const active = summaryDragRef.current
+    if (active != null && event.pointerId !== active.pointerId) return
+    finishSummaryDrag()
+  }
+
+  const onSummaryKeyDown = (event: React.KeyboardEvent<HTMLDivElement>): void => {
+    if (!detailEditing || !detailBBox || !effectiveSummaryPosition) return
+    // Escape must fall through to the window listener that closes detail mode.
+    if (event.key === 'Escape') return
+    const delta = detailKeyboardDelta(event.key, event.shiftKey)
+    if (!delta) return
+    event.preventDefault()
+    event.stopPropagation()
+    const next = clampDetailSummaryAnchor(
+      {
+        x: effectiveSummaryPosition.x + delta.x,
+        y: effectiveSummaryPosition.y + delta.y
+      },
+      paddedDetailBounds(detailBBox),
+      summaryOffsetsInSourcePoints()
+    )
+    setDetailSummaryPosition(detailEditing.name, detailEditing.pageIndex, next)
   }
 
   const onDoubleClick = (event: React.MouseEvent<HTMLCanvasElement>): void => {
@@ -1247,6 +1474,55 @@ export function PdfStage({
               onWheel={onWheel}
               onAuxClick={(event) => event.preventDefault()}
             />
+            {detailEditing && summaryMetrics && summaryCssPosition ? (
+              <div
+                ref={summaryRef}
+                className={
+                  drag?.kind === 'detailSummary' ? 'detail-summary is-dragging' : 'detail-summary'
+                }
+                role="group"
+                tabIndex={0}
+                aria-label={t('detail.summaryLabel', {
+                  name: summaryMetrics.name,
+                  level: summaryMetrics.level
+                })}
+                style={{
+                  left: summaryCssPosition.x,
+                  top: summaryCssPosition.y
+                }}
+                onPointerDown={onSummaryPointerDown}
+                onPointerMove={onSummaryPointerMove}
+                onPointerUp={onSummaryPointerUp}
+                onPointerCancel={onSummaryPointerUp}
+                onLostPointerCapture={onSummaryLostPointerCapture}
+                onKeyDown={onSummaryKeyDown}
+              >
+                <div className="detail-summary__heading">
+                  <strong>{summaryMetrics.name}</strong>
+                  <span>{summaryMetrics.level}</span>
+                </div>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>{t('detail.summaryFloor')}</th>
+                      <th>{t('detail.summaryArea')}</th>
+                      <th>{t('detail.summaryStores')}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td>{summaryMetrics.level}</td>
+                      <td>
+                        {summaryMetrics.areaM2 == null
+                          ? t('detail.notCalibrated')
+                          : `${summaryMetrics.areaM2.toFixed(2)} m²`}
+                      </td>
+                      <td>{summaryMetrics.stores}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            ) : null}
           </div>
         )}
       </div>

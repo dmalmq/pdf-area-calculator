@@ -37,13 +37,108 @@ export function detailPointerIntent(
   detailEditing: boolean,
   button: number,
   tool: Tool,
-  imageHit: boolean
-): 'detailImage' | 'pan' | 'normal' | 'none' {
+  imageHit: boolean,
+  summaryHit: boolean
+): 'detailSummary' | 'detailImage' | 'pan' | 'normal' | 'none' {
   if (!detailEditing) return button === 1 || (button === 0 && tool === 'pan') ? 'pan' : 'normal'
   if (button === 1) return 'pan'
+  if (button === 0 && summaryHit) return 'detailSummary'
   if (button === 0 && imageHit) return 'detailImage'
   if (button === 0 && tool === 'pan') return 'pan'
   return 'none'
+}
+
+export function detailKeyboardDelta(key: string, shift: boolean): Pt | null {
+  const step = shift ? 10 : 1
+  if (key === 'ArrowLeft') return { x: -step, y: 0 }
+  if (key === 'ArrowRight') return { x: step, y: 0 }
+  if (key === 'ArrowUp') return { x: 0, y: step }
+  if (key === 'ArrowDown') return { x: 0, y: -step }
+  return null
+}
+
+export function summaryPositionAfterDrag(
+  startPosition: Pt,
+  startPt: Pt,
+  currentPt: Pt
+): Pt {
+  return {
+    x: startPosition.x + (currentPt.x - startPt.x),
+    y: startPosition.y + (currentPt.y - startPt.y)
+  }
+}
+
+export interface SummarySourceOffsets {
+  dxMin: number
+  dxMax: number
+  dyMin: number
+  dyMax: number
+}
+
+/** Signed PDF offsets of a CSS-axis-aligned summary box relative to its top-left anchor. */
+export function summarySourceOffsetsFromCss(
+  cssW: number,
+  cssH: number,
+  zoom: number,
+  [a, b, c, d]: ViewportTransform
+): SummarySourceOffsets {
+  if (zoom === 0) return { dxMin: 0, dxMax: 0, dyMin: 0, dyMax: 0 }
+  const det = a * d - b * c
+  if (det === 0) return { dxMin: 0, dxMax: 0, dyMin: 0, dyMax: 0 }
+  const vw = cssW / zoom
+  const vh = cssH / zoom
+  // Inverse-map the four viewport corners of the CSS box (relative to top-left).
+  const corners = [
+    { x: 0, y: 0 },
+    { x: (d * vw) / det, y: (-b * vw) / det },
+    { x: (-c * vh) / det, y: (a * vh) / det },
+    { x: (d * vw - c * vh) / det, y: (-b * vw + a * vh) / det }
+  ]
+  const xs = corners.map((point) => point.x)
+  const ys = corners.map((point) => point.y)
+  const dxMin = Math.min(...xs)
+  const dxMax = Math.max(...xs)
+  const dyMin = Math.min(...ys)
+  const dyMax = Math.max(...ys)
+  // Coerce -0 to +0 so deep equality and JSON stay stable.
+  return {
+    dxMin: dxMin === 0 ? 0 : dxMin,
+    dxMax: dxMax === 0 ? 0 : dxMax,
+    dyMin: dyMin === 0 ? 0 : dyMin,
+    dyMax: dyMax === 0 ? 0 : dyMax
+  }
+}
+
+/** Axis-aligned PDF extents of a CSS-axis-aligned summary under a viewport transform. */
+export function summarySourceSizeFromCss(
+  cssW: number,
+  cssH: number,
+  zoom: number,
+  transform: ViewportTransform
+): { w: number; h: number } {
+  const { dxMin, dxMax, dyMin, dyMax } = summarySourceOffsetsFromCss(cssW, cssH, zoom, transform)
+  return { w: dxMax - dxMin, h: dyMax - dyMin }
+}
+
+/**
+ * Clamp a summary top-left anchor so the CSS box (via signed source offsets) stays
+ * inside padded bounds. Unlike clampDetailSummaryPosition, this does not assume -y extent.
+ */
+export function clampDetailSummaryAnchor(
+  position: Pt,
+  bounds: BBox,
+  offsets: SummarySourceOffsets
+): Pt {
+  const minX = bounds.x - offsets.dxMin
+  const maxX = bounds.x + bounds.w - offsets.dxMax
+  const minY = bounds.y - offsets.dyMin
+  const maxY = bounds.y + bounds.h - offsets.dyMax
+  return {
+    // Oversized: pin to the lower bound for x (matches unrotated left pin).
+    x: minX > maxX ? minX : Math.min(Math.max(position.x, minX), maxX),
+    // Oversized: pin to the upper bound for y (matches unrotated top pin in y-up).
+    y: minY > maxY ? maxY : Math.min(Math.max(position.y, minY), maxY)
+  }
 }
 
 export function shouldUseNativeDetailPaste(
