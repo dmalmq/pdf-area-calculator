@@ -119,6 +119,31 @@ describe('detail summary interaction decisions', () => {
     // Default top-left would overflow +y under this transform; display clamp pulls it in.
     expect(displayed.y).toBeLessThan(defaultTopLeft.y)
   })
+
+  it('bases a keyboard step on the displayed anchor when it differs from persist', () => {
+    const bounds = { x: 80, y: 190, w: 440, h: 220 }
+    const offsets = summarySourceOffsetsFromCss(300, 120, 1, [0, 2, 2, 0, 0, 0])
+    const persisted = { x: bounds.x, y: bounds.y + bounds.h }
+    const displayed = clampDetailSummaryAnchor(persisted, bounds, offsets)
+    expect(displayed).not.toEqual(persisted)
+
+    const delta = detailKeyboardDelta('ArrowDown', false)
+    expect(delta).toEqual({ x: 0, y: -1 })
+    const fromDisplayed = {
+      x: displayed.x + delta!.x,
+      y: displayed.y + delta!.y
+    }
+    const fromPersisted = {
+      x: persisted.x + delta!.x,
+      y: persisted.y + delta!.y
+    }
+    // Movement must track the visible card, not the off-screen persist anchor.
+    expect(fromDisplayed).not.toEqual(fromPersisted)
+    expect(fromDisplayed.y).toBe(displayed.y - 1)
+    // A further display clamp of the stepped point still moves (no dead-zone).
+    const nextVisible = clampDetailSummaryAnchor(fromDisplayed, bounds, offsets)
+    expect(nextVisible.y).toBeLessThan(displayed.y)
+  })
 })
 
 describe('detail image import', () => {

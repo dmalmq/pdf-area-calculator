@@ -1285,7 +1285,7 @@ export function PdfStage({
       !detailEditing ||
       !viewport ||
       !overlayRef.current ||
-      !persistedSummaryPosition
+      !displaySummaryPosition
     ) {
       return
     }
@@ -1303,7 +1303,8 @@ export function PdfStage({
       startClient: { x: event.clientX, y: event.clientY },
       startPan: pan,
       startPt,
-      startPosition: persistedSummaryPosition,
+      // Start from the rendered anchor so display/persist offset is not a dead-zone.
+      startPosition: displaySummaryPosition,
       pointerId: event.pointerId,
       moved: false
     })
@@ -1342,16 +1343,17 @@ export function PdfStage({
   }
 
   const onSummaryKeyDown = (event: React.KeyboardEvent<HTMLDivElement>): void => {
-    if (!detailEditing || !detailBBox || !persistedSummaryPosition) return
+    if (!detailEditing || !detailBBox || !displaySummaryPosition) return
     // Escape must fall through to the window listener that closes detail mode.
     if (event.key === 'Escape') return
     const delta = detailKeyboardDelta(event.key, event.shiftKey)
     if (!delta) return
     event.preventDefault()
     event.stopPropagation()
+    // Step from the displayed anchor; shared footprint clamp persists on movement only.
     const next = persistSummaryPosition({
-      x: persistedSummaryPosition.x + delta.x,
-      y: persistedSummaryPosition.y + delta.y
+      x: displaySummaryPosition.x + delta.x,
+      y: displaySummaryPosition.y + delta.y
     })
     if (next) {
       setDetailSummaryPosition(detailEditing.name, detailEditing.pageIndex, next)
