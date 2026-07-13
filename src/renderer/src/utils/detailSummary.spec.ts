@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
+import type { Area } from '../state/types'
+
 import {
   clampDetailSummaryPosition,
   defaultDetailSummaryPosition,
@@ -14,7 +16,7 @@ const pages = [
   { pageIndex: 8, label: '2F', scale: null }
 ]
 
-const square = (pageIndex: number, kind: 'facility' | 'store') => ({
+const square = (pageIndex: number, kind: 'facility' | 'store'): Area => ({
   id: `${kind}-${pageIndex}`,
   pageIndex,
   kind,
