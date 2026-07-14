@@ -295,6 +295,7 @@ export function PdfStage({
     pageIndex: number
     index: SegmentIndex
   } | null>(null)
+  const hoverPtRef = useRef<Pt | null>(null)
   const summaryRef = useRef<HTMLDivElement>(null)
   const summaryDragRef = useRef<{ pointerId: number } | null>(null)
   const [summaryDomPx, setSummaryDomPx] = useState({ w: 0, h: 0 })
@@ -316,6 +317,19 @@ export function PdfStage({
     [sourceIndex, areas]
   )
   const selectedArea = areas.find((area) => area.id === selectedAreaId) ?? null
+
+  // Areas the pointer can interact with: in detail mode only the detail facility's
+  // areas (same page + name); otherwise every area on the page.
+  const interactiveAreas = useMemo(
+    () =>
+      detailEditing
+        ? areas.filter(
+            (area) =>
+              area.pageIndex === detailEditing.pageIndex && area.name === detailEditing.name
+          )
+        : pageAreas,
+    [areas, detailEditing, pageAreas]
+  )
 
   // Vector lines of the current page for snapping, loaded lazily when snapping is on.
   // pageVectorLines memoizes per page proxy, so revisiting a page is cheap; scanned
@@ -519,6 +533,27 @@ export function PdfStage({
       setHoverPt(null)
       return
     }
+    if (detailEditing) {
+      // Inside a detail page every new area belongs to the detailed facility.
+      const base = {
+        id: crypto.randomUUID(),
+        pageIndex: detailEditing.pageIndex,
+        name: detailEditing.name,
+        polygon: draft
+      }
+      addArea(
+        drawKind === 'store'
+          ? {
+              ...base,
+              kind: 'store',
+              code: nextStoreCode(areaStore.getState(), detailEditing.name)
+            }
+          : { ...base, kind: 'facility' }
+      )
+      setDraft([])
+      setHoverPt(null)
+      return
+    }
     if (!activeName) {
       onToast(drawKind === 'store' ? 'Select a facility first' : 'Select or add a facility first')
       return
@@ -550,6 +585,7 @@ export function PdfStage({
     addArea,
     addHole,
     draft,
+    detailEditing,
     drawKind,
     holeTarget,
     onHoleComplete,
@@ -682,17 +718,14 @@ export function PdfStage({
           ctx.restore()
         }
       }
-      areas
-        .filter(
-          (area) => area.pageIndex === detailEditing.pageIndex && area.name === detailEditing.name
-        )
-        .forEach((area) => drawPolygon(area, false, shouldDrawDetailTag(area.kind)))
-      return
+      interactiveAreas.forEach((area) =>
+        drawPolygon(area, selectedAreaIds.includes(area.id), shouldDrawDetailTag(area.kind))
+      )
+    } else {
+      pageAreas.forEach((area) => drawPolygon(area, selectedAreaIds.includes(area.id)))
     }
 
-    pageAreas.forEach((area) => drawPolygon(area, selectedAreaIds.includes(area.id)))
-
-    if (legendVisible) {
+    if (!detailEditing && legendVisible) {
       const entries = facilitiesOnPage(state, sourceIndex)
       if (entries.length) {
         const topLeftPdf = legendPos ?? defaultLegendPos(viewport)
@@ -836,6 +869,7 @@ export function PdfStage({
     draft,
     hoverPt,
     holeTarget,
+    interactiveAreas,
     legendPos,
     legendVisible,
     legendOrientation,
@@ -854,8 +888,6 @@ export function PdfStage({
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
-      // Detail mode handles keys via its dedicated Escape listener; skip global handling.
-      if (detailEditing) return
       const target = event.target
       const editingText =
         target instanceof HTMLElement && ['INPUT', 'SELECT', 'TEXTAREA'].includes(target.tagName)
@@ -887,15 +919,45 @@ export function PdfStage({
           setSelectedVertex(null)
         }
       }
+
+      if (event.key === 'Tab' && tool === 'edit' && hoverPtRef.current) {
+        const hover = hoverPtRef.current
+        const stack = interactiveAreas.filter((area) => pointInArea(area, hover))
+        if (stack.length) {
+          event.preventDefault()
+          const next = nextTabSelection(
+            stack.map((area) => area.id).reverse(),
+            selectedAreaId,
+            event.shiftKey
+          )
+          if (next) {
+            selectArea(next)
+            setSelectedVertex(null)
+          }
+        }
+      }
     }
 
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [closeDraft, detailEditing, draft.length, onToast, removeVertex, selectedVertex, tool])
+  }, [
+    closeDraft,
+    draft.length,
+    interactiveAreas,
+    onToast,
+    removeVertex,
+    selectArea,
+    selectedAreaId,
+    selectedVertex,
+    tool
+  ])
 
   useEffect(() => {
     if (!detailEditing) return
     const onKeyDown = (event: KeyboardEvent): void => {
+      // A draft or selected vertex consumes Escape first (global handler above); only
+      // the next Escape closes the editor.
+      if (draft.length || selectedVertex) return
       if (event.key === 'Escape') {
         event.preventDefault()
         closeDetailEditor()
@@ -903,7 +965,7 @@ export function PdfStage({
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [closeDetailEditor, detailEditing])
+  }, [closeDetailEditor, detailEditing, draft.length, selectedVertex])
 
   useEffect(() => {
     if (!detailEditing) return
@@ -967,8 +1029,8 @@ export function PdfStage({
   }, [areas, detailEditing, setPan, setZoom, viewport])
 
   const findAreaAt = (pt: Pt): Area | null => {
-    for (let i = pageAreas.length - 1; i >= 0; i -= 1) {
-      if (pointInArea(pageAreas[i], pt)) return pageAreas[i]
+    for (let i = interactiveAreas.length - 1; i >= 0; i -= 1) {
+      if (pointInArea(interactiveAreas[i], pt)) return interactiveAreas[i]
     }
     return null
   }
@@ -977,9 +1039,10 @@ export function PdfStage({
     if (!tagsVisible) return null
     const ctx = overlayRef.current?.getContext('2d')
     if (!ctx || !viewport) return null
-    for (let i = pageAreas.length - 1; i >= 0; i -= 1) {
-      const area = pageAreas[i]
+    for (let i = interactiveAreas.length - 1; i >= 0; i -= 1) {
+      const area = interactiveAreas[i]
       if (area.polygon.length < 2) continue
+      if (detailEditing && !shouldDrawDetailTag(area.kind)) continue
       const rect = tagRect(area, ctx, viewport, state)
       if (
         rect &&
@@ -1036,9 +1099,9 @@ export function PdfStage({
   // Tolerance is SNAP_TOLERANCE_PX screen px in PDF pt. Alt bypasses snapping; the
   // excluded area (a vertex drag's own polygon) can't capture its own handle.
   const resolveStageSnap = (raw: Pt, altKey: boolean, excludeAreaId?: string): SnapHit | null => {
-    if (!snapEnabled || altKey || !viewport || detailEditing) return null
+    if (!snapEnabled || altKey || !viewport) return null
     const extraSegments: Segment[] = []
-    for (const area of pageAreas) {
+    for (const area of interactiveAreas) {
       if (area.id === excludeAreaId) continue
       for (const ring of [area.polygon, ...(area.holes ?? [])]) {
         if (ring.length < 2) continue
@@ -1055,6 +1118,129 @@ export function PdfStage({
       extraSegments,
       extraPoints: draft
     })
+  }
+
+  const startMarquee = (event: React.PointerEvent<HTMLCanvasElement>, pdfPt: Pt): void => {
+    // Empty space: marquee selection. A no-move click clears the selection on release.
+    setSelectedVertex(null)
+    setMarquee(null)
+    setDrag({
+      kind: 'marquee',
+      startClient: { x: event.clientX, y: event.clientY },
+      startPan: pan,
+      startPt: pdfPt,
+      moved: false
+    })
+  }
+
+  const startDetailImageDrag = (
+    event: React.PointerEvent<HTMLCanvasElement>,
+    pdfPt: Pt,
+    transform: DetailTransform
+  ): void => {
+    flushWheelBatch()
+    beginInteraction()
+    setDrag({
+      kind: 'detailImage',
+      startClient: { x: event.clientX, y: event.clientY },
+      startPan: pan,
+      startPt: pdfPt,
+      startTransform: transform,
+      moved: false
+    })
+  }
+
+  const drawPointerDown = (
+    event: React.PointerEvent<HTMLCanvasElement>,
+    pdfPt: Pt,
+    viewportPoint: Pt
+  ): void => {
+    if (draft.length >= 3 && viewport) {
+      const first = viewportPt(viewport, draft[0])
+      if (distance(first, viewportPoint) <= 8) {
+        closeDraft()
+        return
+      }
+    }
+    setDraft((current) => [...current, resolveStageSnap(pdfPt, event.altKey)?.pt ?? pdfPt])
+  }
+
+  // Edit-tool pointerdown: tag, vertex, midpoint, then body/selection drag. Returns
+  // false when nothing was hit so the caller can fall back (marquee / image drag).
+  const tryEditPointerDown = (
+    event: React.PointerEvent<HTMLCanvasElement>,
+    pdfPt: Pt,
+    viewportPoint: Pt
+  ): boolean => {
+    const tagArea = findTagAt(viewportPoint)
+    if (tagArea) {
+      flushWheelBatch()
+      beginInteraction()
+      setDrag({
+        kind: 'label',
+        startClient: { x: event.clientX, y: event.clientY },
+        startPan: pan,
+        areaId: tagArea.id,
+        startPt: pdfPt,
+        startLabelOffset: tagArea.labelOffset ?? { x: 0, y: 0 },
+        moved: false
+      })
+      return true
+    }
+    const vertex = findVertexHit(viewportPoint)
+    if (vertex) {
+      setSelectedVertex(vertex)
+      flushWheelBatch()
+      beginInteraction()
+      setDrag({
+        kind: 'vertex',
+        startClient: { x: event.clientX, y: event.clientY },
+        startPan: pan,
+        areaId: vertex.areaId,
+        vertexIndex: vertex.index,
+        moved: false
+      })
+      return true
+    }
+    const midpoint = findMidpointHit(viewportPoint)
+    if (midpoint && selectedAreaId) {
+      insertVertex(selectedAreaId, midpoint.edgeIndex, midpoint.pt)
+      return true
+    }
+    const bodyArea = findAreaAt(pdfPt)
+    if (!bodyArea) return false
+    if (event.shiftKey) {
+      toggleAreaSelected(bodyArea.id)
+      setSelectedVertex(null)
+      return true
+    }
+    // A Tab-selected beneath area stays draggable: when any selected area contains
+    // the click point, drag the current selection instead of re-selecting topmost.
+    const selectionAtPoint = interactiveAreas.some(
+      (area) => selectedAreaIds.includes(area.id) && pointInArea(area, pdfPt)
+    )
+    const groupIds = selectionAtPoint ? selectedAreaIds : [bodyArea.id]
+    if (!selectionAtPoint) selectArea(bodyArea.id)
+    setSelectedVertex(null)
+    flushWheelBatch()
+    beginInteraction()
+    const group = new Set(groupIds)
+    setDrag({
+      kind: 'area',
+      startClient: { x: event.clientX, y: event.clientY },
+      startPan: pan,
+      areaId: bodyArea.id,
+      startPt: pdfPt,
+      startGeometries: interactiveAreas
+        .filter((area) => group.has(area.id))
+        .map((area) => ({
+          id: area.id,
+          polygon: area.polygon.map((pt) => ({ ...pt })),
+          holes: area.holes?.map((ring) => ring.map((pt) => ({ ...pt })))
+        })),
+      moved: false
+    })
+    return true
   }
 
   const onPointerDown = (event: React.PointerEvent<HTMLCanvasElement>): void => {
@@ -1113,20 +1299,20 @@ export function PdfStage({
         canvas.releasePointerCapture(event.pointerId)
         return
       }
-      if (intent === 'detailImage' && transform) {
-        flushWheelBatch()
-        beginInteraction()
-        setDrag({
-          kind: 'detailImage',
-          startClient: { x: event.clientX, y: event.clientY },
-          startPan: pan,
-          startPt: pdfPt,
-          startTransform: transform,
-          moved: false
-        })
-      } else if (intent === 'pan') {
+      if (intent === 'pan') {
         startPanDrag()
+        return
       }
+      if (event.button !== 0) return
+      if (tool === 'edit') {
+        // Area interactions beat the reference image; the image drags only when the
+        // click hits it but no area; marquee when the click hits neither.
+        if (tryEditPointerDown(event, pdfPt, viewportPoint)) return
+        if (imageHit && transform) startDetailImageDrag(event, pdfPt, transform)
+        else startMarquee(event, pdfPt)
+        return
+      }
+      drawPointerDown(event, pdfPt, viewportPoint)
       return
     }
     if (detailPointerIntent(false, event.button, tool, false, false) === 'pan') {
@@ -1173,102 +1359,22 @@ export function PdfStage({
     }
 
     if (tool === 'edit') {
-      const tagArea = findTagAt(viewportPoint)
-      if (tagArea) {
-        flushWheelBatch()
-        beginInteraction()
-        setDrag({
-          kind: 'label',
-          startClient: { x: event.clientX, y: event.clientY },
-          startPan: pan,
-          areaId: tagArea.id,
-          startPt: pdfPt,
-          startLabelOffset: tagArea.labelOffset ?? { x: 0, y: 0 },
-          moved: false
-        })
-        return
-      }
-      const vertex = findVertexHit(viewportPoint)
-      if (vertex) {
-        setSelectedVertex(vertex)
-        flushWheelBatch()
-        beginInteraction()
-        setDrag({
-          kind: 'vertex',
-          startClient: { x: event.clientX, y: event.clientY },
-          startPan: pan,
-          areaId: vertex.areaId,
-          vertexIndex: vertex.index,
-          moved: false
-        })
-        return
-      }
-      const midpoint = findMidpointHit(viewportPoint)
-      if (midpoint && selectedAreaId) {
-        insertVertex(selectedAreaId, midpoint.edgeIndex, midpoint.pt)
-        return
-      }
-      const bodyArea = findAreaAt(pdfPt)
-      if (bodyArea) {
-        if (event.shiftKey) {
-          toggleAreaSelected(bodyArea.id)
-          setSelectedVertex(null)
-          return
-        }
-        const groupIds = selectedAreaIds.includes(bodyArea.id) ? selectedAreaIds : [bodyArea.id]
-        if (!selectedAreaIds.includes(bodyArea.id)) selectArea(bodyArea.id)
-        setSelectedVertex(null)
-        flushWheelBatch()
-        beginInteraction()
-        const group = new Set(groupIds)
-        setDrag({
-          kind: 'area',
-          startClient: { x: event.clientX, y: event.clientY },
-          startPan: pan,
-          areaId: bodyArea.id,
-          startPt: pdfPt,
-          startGeometries: pageAreas
-            .filter((area) => group.has(area.id))
-            .map((area) => ({
-              id: area.id,
-              polygon: area.polygon.map((pt) => ({ ...pt })),
-              holes: area.holes?.map((ring) => ring.map((pt) => ({ ...pt })))
-            })),
-          moved: false
-        })
-        return
-      }
-      // Empty space: marquee selection. A no-move click clears the selection on release.
-      setSelectedVertex(null)
-      setMarquee(null)
-      setDrag({
-        kind: 'marquee',
-        startClient: { x: event.clientX, y: event.clientY },
-        startPan: pan,
-        startPt: pdfPt,
-        moved: false
-      })
+      if (tryEditPointerDown(event, pdfPt, viewportPoint)) return
+      startMarquee(event, pdfPt)
       return
     }
 
-    if (draft.length >= 3 && viewport) {
-      const first = viewportPt(viewport, draft[0])
-      if (distance(first, viewportPoint) <= 8) {
-        closeDraft()
-        return
-      }
-    }
-
-    setDraft((current) => [...current, resolveStageSnap(pdfPt, event.altKey)?.pt ?? pdfPt])
+    drawPointerDown(event, pdfPt, viewportPoint)
   }
 
   const onPointerMove = (event: React.PointerEvent<HTMLCanvasElement>): void => {
     if (!viewport || !overlayRef.current) return
     const canvas = overlayRef.current
     const pdfPt = eventToPdfPt(event.nativeEvent, canvas, viewport)
+    hoverPtRef.current = pdfPt
 
     if (!drag) {
-      const snapContext = !detailEditing && (tool === 'draw' || calibrating || holeTarget != null)
+      const snapContext = tool === 'draw' || calibrating || holeTarget != null
       const hit = snapContext ? resolveStageSnap(pdfPt, event.altKey) : null
       setHoverPt(hit?.pt ?? pdfPt)
       setSnapHit(hit)
@@ -1401,7 +1507,7 @@ export function PdfStage({
           x: Math.max(marquee.a.x, marquee.b.x),
           y: Math.max(marquee.a.y, marquee.b.y)
         }
-        const hits = pageAreas
+        const hits = interactiveAreas
           .filter((area) => polygonIntersectsRect(area.polygon, min, max))
           .map((area) => area.id)
         selectAreas(event.shiftKey ? [...selectedAreaIds, ...hits] : hits)
@@ -1533,7 +1639,6 @@ export function PdfStage({
 
   const onDoubleClick = (event: React.MouseEvent<HTMLCanvasElement>): void => {
     if (!viewport || !overlayRef.current) return
-    if (detailEditing) return
     const pdfPt = eventToPdfPt(event.nativeEvent as PointerEvent, overlayRef.current, viewport)
     if (tool === 'edit') {
       const viewportPoint = eventToViewportPt(event.nativeEvent as PointerEvent, overlayRef.current)
@@ -1675,6 +1780,7 @@ export function PdfStage({
               onPointerUp={onPointerUp}
               onPointerCancel={onPointerUp}
               onPointerLeave={() => {
+                hoverPtRef.current = null
                 setHoverPt(null)
                 setSnapHit(null)
               }}
@@ -1829,4 +1935,18 @@ export function PdfStage({
       </div>
     </main>
   )
+}
+
+// Next selection when Tab-cycling through overlapping areas under the cursor.
+// `ids` are ordered topmost-first; Tab moves down the stack, Shift+Tab back up.
+export function nextTabSelection(
+  ids: string[],
+  currentId: string | null,
+  backwards: boolean
+): string | null {
+  if (ids.length === 0) return null
+  const index = currentId == null ? -1 : ids.indexOf(currentId)
+  if (index === -1) return ids[0]
+  const step = backwards ? -1 : 1
+  return ids[(index + step + ids.length) % ids.length]
 }

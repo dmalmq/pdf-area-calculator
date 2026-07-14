@@ -4,6 +4,7 @@ import {
   anchoredZoomScroll,
   constrainDelta,
   doubleClickAction,
+  nextTabSelection,
   shouldPanPointer,
   tagBoxSize
 } from './PdfStage'
@@ -61,6 +62,30 @@ describe('tagBoxSize', () => {
 
   it('falls back to padding-only when there are no lines', () => {
     expect(tagBoxSize([])).toEqual({ width: 20, height: 16 })
+  })
+})
+
+describe('nextTabSelection', () => {
+  const stack = ['top', 'mid', 'bottom'] // topmost-first
+
+  it('selects the topmost area when nothing in the stack is selected', () => {
+    expect(nextTabSelection(stack, null, false)).toBe('top')
+    expect(nextTabSelection(stack, 'outside', false)).toBe('top')
+  })
+
+  it('cycles beneath the current selection and wraps at the bottom', () => {
+    expect(nextTabSelection(stack, 'top', false)).toBe('mid')
+    expect(nextTabSelection(stack, 'mid', false)).toBe('bottom')
+    expect(nextTabSelection(stack, 'bottom', false)).toBe('top')
+  })
+
+  it('cycles upward with shift and wraps at the top', () => {
+    expect(nextTabSelection(stack, 'bottom', true)).toBe('mid')
+    expect(nextTabSelection(stack, 'top', true)).toBe('bottom')
+  })
+
+  it('returns null for an empty stack', () => {
+    expect(nextTabSelection([], null, false)).toBeNull()
   })
 })
 
