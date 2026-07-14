@@ -246,12 +246,16 @@ function App(): React.JSX.Element {
 
   const copySelected = useCallback((): void => {
     const count = areaStore.getState().copySelectedArea()
-    showToast(count ? t('toast.copied.one') : t('toast.noCopy'))
+    showToast(
+      count
+        ? t(count === 1 ? 'toast.copied.one' : 'toast.copied.other', { n: count })
+        : t('toast.noCopy')
+    )
   }, [showToast])
 
   const copyContextual = useCallback((): void => {
     const state = areaStore.getState()
-    const count = state.selectedAreaId ? state.copySelectedArea() : state.copyActivePage()
+    const count = state.selectedAreaIds.length ? state.copySelectedArea() : state.copyActivePage()
     showToast(
       count
         ? t(count === 1 ? 'toast.copied.one' : 'toast.copied.other', { n: count })
@@ -268,9 +272,9 @@ function App(): React.JSX.Element {
     )
   }, [showToast])
 
-  const requestDeleteArea = useCallback(
-    (id: string): void => {
-      areaStore.getState().deleteArea(id)
+  const requestDeleteAreas = useCallback(
+    (ids: string[]): void => {
+      areaStore.getState().deleteAreas(ids)
       showToast(t('toast.deleted'))
     },
     [showToast]
@@ -350,11 +354,11 @@ function App(): React.JSX.Element {
       else if (event.key === '0') {
         state.setZoom(1)
         state.setPan({ x: 0, y: 0 })
-      } else if (event.key === 'Delete' && state.selectedAreaId)
-        requestDeleteArea(state.selectedAreaId)
+      } else if (event.key === 'Delete' && state.selectedAreaIds.length)
+        requestDeleteAreas(state.selectedAreaIds)
       else if (event.key === 'Escape') {
         if (state.tool === 'edit') state.setTool('draw')
-        else if (state.selectedAreaId) state.selectArea(null)
+        else if (state.selectedAreaIds.length) state.selectArea(null)
       }
     }
 
@@ -377,7 +381,7 @@ function App(): React.JSX.Element {
     holeTarget,
     copyContextual,
     paste,
-    requestDeleteArea
+    requestDeleteAreas
   ])
 
   return (
@@ -416,7 +420,7 @@ function App(): React.JSX.Element {
           calibrationDraft={calibrationDraft}
           onClearCalibration={() => setCalibrationDraft([])}
           onCopyArea={copySelected}
-          onRequestDeleteArea={requestDeleteArea}
+          onRequestDeleteArea={(id) => requestDeleteAreas([id])}
           onRenumberStores={() => setRenumberOpen(true)}
           onAddHole={startHole}
           drawerOpen={inspectorOpen}

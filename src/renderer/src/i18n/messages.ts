@@ -36,6 +36,13 @@ export const messages: Record<Locale, Record<string, string>> = {
     'action.inspector': 'インスペクタ',
     'action.close': '閉じる',
 
+    'snap.label': 'スナップ',
+    'snap.enable': 'スナップを有効化',
+    'snap.endpoints': '端点',
+    'snap.intersections': '交点',
+    'snap.lines': '線上',
+    'snap.altHint': 'Altキーで一時的に無効',
+
     'lang.label': '言語',
     'lang.ja': '日本語',
     'lang.en': 'English',
@@ -250,6 +257,13 @@ export const messages: Record<Locale, Record<string, string>> = {
     'action.tags': 'Tags',
     'action.inspector': 'Inspector',
     'action.close': 'Close',
+
+    'snap.label': 'Snap',
+    'snap.enable': 'Enable snapping',
+    'snap.endpoints': 'Endpoints',
+    'snap.intersections': 'Intersections',
+    'snap.lines': 'Lines',
+    'snap.altHint': 'Hold Alt to disable temporarily',
 
     'lang.label': 'Language',
     'lang.ja': '日本語',

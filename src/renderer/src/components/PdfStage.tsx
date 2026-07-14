@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { PageViewport } from 'pdfjs-dist'
 
-import { pointInArea, shoelacePt2 } from '../geometry/area'
+import { pointInArea, polygonIntersectsRect, shoelacePt2 } from '../geometry/area'
+import { resolveSnap, SegmentIndex, type Segment, type SnapHit } from '../geometry/snap'
+import { pageVectorLines } from '../pdf/vectorLines'
 import { facilityDetailBBox } from '../geometry/detailFit'
 import {
   clampDetailSummaryAnchor,
@@ -35,6 +37,7 @@ import {
   facilitiesOnPage,
   mmPerPtFor,
   nextStoreCode,
+  primaryAreaId,
   useAreaStore
 } from '../state/store'
 import { storeTagLabel } from '../state/storeLabel'
@@ -59,14 +62,13 @@ interface PdfStageProps {
 }
 
 interface DragState {
-  kind: 'pan' | 'vertex' | 'area' | 'legend' | 'label' | 'detailImage' | 'detailSummary'
+  kind: 'pan' | 'vertex' | 'area' | 'marquee' | 'legend' | 'label' | 'detailImage' | 'detailSummary'
   startClient: Pt
   startPan: Pt
   areaId?: string
   vertexIndex?: number
   startPt?: Pt
-  startPolygon?: Pt[]
-  startHoles?: Pt[][]
+  startGeometries?: Array<{ id: string; polygon: Pt[]; holes?: Pt[][] }>
   startLegendPos?: Pt
   startLabelOffset?: Pt
   startTransform?: DetailTransform
@@ -117,6 +119,9 @@ function centroid(poly: Pt[]): Pt {
 const LEGEND = LEGEND_LAYOUT
 
 const TAG = { font: 13, weight: 600, lineH: 15, padX: 10, padY: 8 }
+
+// Snap search radius in screen px; converted to PDF pt at the current zoom.
+const SNAP_TOLERANCE_PX = 10
 
 // `.pdf-stage` margin in main.css; the wrapper's content origin is offset by this
 // inside the scroll container, so framing math must add it back.
@@ -238,7 +243,8 @@ export function PdfStage({
   const pages = useAreaStore((s) => s.pages)
   const areas = useAreaStore((s) => s.areas)
   const activeName = useAreaStore((s) => s.activeName)
-  const selectedAreaId = useAreaStore((s) => s.selectedAreaId)
+  const selectedAreaIds = useAreaStore((s) => s.selectedAreaIds)
+  const selectedAreaId = useAreaStore(primaryAreaId)
   const tool = useAreaStore((s) => s.tool)
   const zoom = useAreaStore((s) => s.zoom)
   const pan = useAreaStore((s) => s.pan)
@@ -260,7 +266,11 @@ export function PdfStage({
   const setAreaLabelOffset = useAreaStore((s) => s.setAreaLabelOffset)
   const insertVertex = useAreaStore((s) => s.insertVertex)
   const removeVertex = useAreaStore((s) => s.removeVertex)
-  const setAreaGeometry = useAreaStore((s) => s.setAreaGeometry)
+  const setAreasGeometry = useAreaStore((s) => s.setAreasGeometry)
+  const selectAreas = useAreaStore((s) => s.selectAreas)
+  const toggleAreaSelected = useAreaStore((s) => s.toggleAreaSelected)
+  const snapEnabled = useAreaStore((s) => s.snapEnabled)
+  const snapTargets = useAreaStore((s) => s.snapTargets)
   const addHole = useAreaStore((s) => s.addHole)
   const beginInteraction = useAreaStore((s) => s.beginInteraction)
   const endInteraction = useAreaStore((s) => s.endInteraction)
@@ -278,6 +288,13 @@ export function PdfStage({
     null
   )
   const [drag, setDrag] = useState<DragState | null>(null)
+  const [marquee, setMarquee] = useState<{ a: Pt; b: Pt } | null>(null)
+  const [snapHit, setSnapHit] = useState<SnapHit | null>(null)
+  const [pageSegments, setPageSegments] = useState<{
+    doc: unknown
+    pageIndex: number
+    index: SegmentIndex
+  } | null>(null)
   const summaryRef = useRef<HTMLDivElement>(null)
   const summaryDragRef = useRef<{ pointerId: number } | null>(null)
   const [summaryDomPx, setSummaryDomPx] = useState({ w: 0, h: 0 })
@@ -299,6 +316,37 @@ export function PdfStage({
     [sourceIndex, areas]
   )
   const selectedArea = areas.find((area) => area.id === selectedAreaId) ?? null
+
+  // Vector lines of the current page for snapping, loaded lazily when snapping is on.
+  // pageVectorLines memoizes per page proxy, so revisiting a page is cheap; scanned
+  // (image-only) pages yield no segments and snapping falls back to drawn shapes.
+  // The state is keyed by (doc, page) below instead of being cleared synchronously,
+  // so a stale index can never snap against another page's lines.
+  useEffect(() => {
+    if (!pdfDoc || !snapEnabled) return
+    let cancelled = false
+    pdfDoc
+      .getPage(sourceIndex + 1)
+      .then((pdfPage) => pageVectorLines(pdfPage))
+      .then((lines) => {
+        if (!cancelled && lines.segments.length) {
+          setPageSegments({
+            doc: pdfDoc,
+            pageIndex: sourceIndex,
+            index: new SegmentIndex(lines.segments)
+          })
+        }
+      })
+      .catch(() => undefined)
+    return () => {
+      cancelled = true
+    }
+  }, [pdfDoc, snapEnabled, sourceIndex])
+
+  const pageSegmentIndex =
+    pageSegments && pageSegments.doc === pdfDoc && pageSegments.pageIndex === sourceIndex
+      ? pageSegments.index
+      : null
 
   const currentDetail =
     detailPages.find(
@@ -642,7 +690,7 @@ export function PdfStage({
       return
     }
 
-    pageAreas.forEach((area) => drawPolygon(area, area.id === selectedAreaId))
+    pageAreas.forEach((area) => drawPolygon(area, selectedAreaIds.includes(area.id)))
 
     if (legendVisible) {
       const entries = facilitiesOnPage(state, sourceIndex)
@@ -711,7 +759,48 @@ export function PdfStage({
       ctx.stroke()
     }
 
-    if (tool === 'edit' && selectedArea) {
+    if (marquee) {
+      const a = viewportPt(viewport, marquee.a)
+      const b = viewportPt(viewport, marquee.b)
+      const x = Math.min(a.x, b.x)
+      const y = Math.min(a.y, b.y)
+      ctx.save()
+      ctx.fillStyle = 'rgba(37, 99, 235, 0.08)'
+      ctx.fillRect(x, y, Math.abs(a.x - b.x), Math.abs(a.y - b.y))
+      ctx.strokeStyle = '#2563eb'
+      ctx.lineWidth = 1.5
+      ctx.setLineDash([5, 4])
+      ctx.strokeRect(x, y, Math.abs(a.x - b.x), Math.abs(a.y - b.y))
+      ctx.restore()
+    }
+
+    if (snapHit) {
+      // Marker shape encodes the snap kind: square = endpoint, × = intersection,
+      // diamond = nearest point on a line.
+      const p = viewportPt(viewport, snapHit.pt)
+      ctx.save()
+      ctx.strokeStyle = '#2563eb'
+      ctx.lineWidth = 2
+      ctx.beginPath()
+      if (snapHit.kind === 'endpoint') {
+        ctx.rect(p.x - 5, p.y - 5, 10, 10)
+      } else if (snapHit.kind === 'intersection') {
+        ctx.moveTo(p.x - 5, p.y - 5)
+        ctx.lineTo(p.x + 5, p.y + 5)
+        ctx.moveTo(p.x + 5, p.y - 5)
+        ctx.lineTo(p.x - 5, p.y + 5)
+      } else {
+        ctx.moveTo(p.x, p.y - 6)
+        ctx.lineTo(p.x + 6, p.y)
+        ctx.lineTo(p.x, p.y + 6)
+        ctx.lineTo(p.x - 6, p.y)
+        ctx.closePath()
+      }
+      ctx.stroke()
+      ctx.restore()
+    }
+
+    if (tool === 'edit' && selectedArea && selectedAreaIds.length === 1) {
       const color = colorForBusiness(state, selectedArea.name)
       const pts = selectedArea.polygon.map((pt) => viewportPt(viewport, pt))
       ctx.lineWidth = 2
@@ -751,10 +840,12 @@ export function PdfStage({
     legendVisible,
     legendOrientation,
     legendScale,
+    marquee,
     pageAreas,
     selectedArea,
-    selectedAreaId,
+    selectedAreaIds,
     selectedVertex,
+    snapHit,
     state,
     tagsVisible,
     tool,
@@ -941,6 +1032,31 @@ export function PdfStage({
     return { x: tl.x, y: tl.y, w: geo.width, h: geo.height }
   }
 
+  // Snap a raw pointer point against page vector lines + drawn shapes + the draft.
+  // Tolerance is SNAP_TOLERANCE_PX screen px in PDF pt. Alt bypasses snapping; the
+  // excluded area (a vertex drag's own polygon) can't capture its own handle.
+  const resolveStageSnap = (raw: Pt, altKey: boolean, excludeAreaId?: string): SnapHit | null => {
+    if (!snapEnabled || altKey || !viewport || detailEditing) return null
+    const extraSegments: Segment[] = []
+    for (const area of pageAreas) {
+      if (area.id === excludeAreaId) continue
+      for (const ring of [area.polygon, ...(area.holes ?? [])]) {
+        if (ring.length < 2) continue
+        for (let i = 0; i < ring.length; i += 1) {
+          extraSegments.push({ a: ring[i], b: ring[(i + 1) % ring.length] })
+        }
+      }
+    }
+    return resolveSnap({
+      pt: raw,
+      tolerance: SNAP_TOLERANCE_PX / (viewport.scale * zoom),
+      targets: snapTargets,
+      index: pageSegmentIndex,
+      extraSegments,
+      extraPoints: draft
+    })
+  }
+
   const onPointerDown = (event: React.PointerEvent<HTMLCanvasElement>): void => {
     if (!viewport || !overlayRef.current) return
     if (event.button !== 0 && event.button !== 1) return
@@ -1025,7 +1141,8 @@ export function PdfStage({
           return
         }
       }
-      setDraft((current) => [...current, pdfPt])
+      const snapped = resolveStageSnap(pdfPt, event.altKey)
+      setDraft((current) => [...current, snapped?.pt ?? pdfPt])
       return
     }
 
@@ -1051,7 +1168,7 @@ export function PdfStage({
     }
 
     if (calibrating) {
-      onCalibrationPoint(pdfPt)
+      onCalibrationPoint(resolveStageSnap(pdfPt, event.altKey)?.pt ?? pdfPt)
       return
     }
 
@@ -1093,27 +1210,44 @@ export function PdfStage({
       }
       const bodyArea = findAreaAt(pdfPt)
       if (bodyArea) {
-        if (bodyArea.id !== selectedAreaId) selectArea(bodyArea.id)
+        if (event.shiftKey) {
+          toggleAreaSelected(bodyArea.id)
+          setSelectedVertex(null)
+          return
+        }
+        const groupIds = selectedAreaIds.includes(bodyArea.id) ? selectedAreaIds : [bodyArea.id]
+        if (!selectedAreaIds.includes(bodyArea.id)) selectArea(bodyArea.id)
         setSelectedVertex(null)
         flushWheelBatch()
         beginInteraction()
+        const group = new Set(groupIds)
         setDrag({
           kind: 'area',
           startClient: { x: event.clientX, y: event.clientY },
           startPan: pan,
           areaId: bodyArea.id,
           startPt: pdfPt,
-          startPolygon: bodyArea.polygon.map((pt) => ({ ...pt })),
-          startHoles: bodyArea.holes?.map((ring) => ring.map((pt) => ({ ...pt }))),
+          startGeometries: pageAreas
+            .filter((area) => group.has(area.id))
+            .map((area) => ({
+              id: area.id,
+              polygon: area.polygon.map((pt) => ({ ...pt })),
+              holes: area.holes?.map((ring) => ring.map((pt) => ({ ...pt })))
+            })),
           moved: false
         })
         return
       }
-      if (!selectedAreaId) {
-        onToast('Select an area to edit')
-        return
-      }
+      // Empty space: marquee selection. A no-move click clears the selection on release.
       setSelectedVertex(null)
+      setMarquee(null)
+      setDrag({
+        kind: 'marquee',
+        startClient: { x: event.clientX, y: event.clientY },
+        startPan: pan,
+        startPt: pdfPt,
+        moved: false
+      })
       return
     }
 
@@ -1125,16 +1259,22 @@ export function PdfStage({
       }
     }
 
-    setDraft((current) => [...current, pdfPt])
+    setDraft((current) => [...current, resolveStageSnap(pdfPt, event.altKey)?.pt ?? pdfPt])
   }
 
   const onPointerMove = (event: React.PointerEvent<HTMLCanvasElement>): void => {
     if (!viewport || !overlayRef.current) return
     const canvas = overlayRef.current
     const pdfPt = eventToPdfPt(event.nativeEvent, canvas, viewport)
-    setHoverPt(pdfPt)
 
-    if (!drag) return
+    if (!drag) {
+      const snapContext = !detailEditing && (tool === 'draw' || calibrating || holeTarget != null)
+      const hit = snapContext ? resolveStageSnap(pdfPt, event.altKey) : null
+      setHoverPt(hit?.pt ?? pdfPt)
+      setSnapHit(hit)
+      return
+    }
+    setHoverPt(pdfPt)
 
     const moved =
       drag.moved || distance(drag.startClient, { x: event.clientX, y: event.clientY }) > 2
@@ -1153,23 +1293,34 @@ export function PdfStage({
       return
     }
 
-    if (drag.areaId && drag.vertexIndex != null) {
-      if (moved) moveVertex(drag.areaId, drag.vertexIndex, pdfPt)
+    if (drag.kind === 'vertex' && drag.areaId && drag.vertexIndex != null) {
+      if (moved) {
+        const hit = resolveStageSnap(pdfPt, event.altKey, drag.areaId)
+        setSnapHit(hit)
+        moveVertex(drag.areaId, drag.vertexIndex, hit?.pt ?? pdfPt)
+      }
       setDrag({ ...drag, moved })
     }
 
-    if (drag.kind === 'area' && drag.areaId && drag.startPt && drag.startPolygon) {
+    if (drag.kind === 'area' && drag.startPt && drag.startGeometries) {
       if (moved) {
         const raw = { x: pdfPt.x - drag.startPt.x, y: pdfPt.y - drag.startPt.y }
         const delta = constrainDelta(raw, event.shiftKey)
-        setAreaGeometry(
-          drag.areaId,
-          drag.startPolygon.map((pt) => ({ x: pt.x + delta.x, y: pt.y + delta.y })),
-          drag.startHoles?.map((ring) =>
-            ring.map((pt) => ({ x: pt.x + delta.x, y: pt.y + delta.y }))
-          )
+        setAreasGeometry(
+          drag.startGeometries.map((entry) => ({
+            id: entry.id,
+            polygon: entry.polygon.map((pt) => ({ x: pt.x + delta.x, y: pt.y + delta.y })),
+            holes: entry.holes?.map((ring) =>
+              ring.map((pt) => ({ x: pt.x + delta.x, y: pt.y + delta.y }))
+            )
+          }))
         )
       }
+      setDrag({ ...drag, moved })
+    }
+
+    if (drag.kind === 'marquee' && drag.startPt) {
+      if (moved) setMarquee({ a: drag.startPt, b: pdfPt })
       setDrag({ ...drag, moved })
     }
 
@@ -1240,7 +1391,27 @@ export function PdfStage({
 
   const onPointerUp = (event: React.PointerEvent<HTMLCanvasElement>): void => {
     overlayRef.current?.releasePointerCapture(event.pointerId)
+    if (drag?.kind === 'marquee') {
+      if (drag.moved && marquee) {
+        const min = {
+          x: Math.min(marquee.a.x, marquee.b.x),
+          y: Math.min(marquee.a.y, marquee.b.y)
+        }
+        const max = {
+          x: Math.max(marquee.a.x, marquee.b.x),
+          y: Math.max(marquee.a.y, marquee.b.y)
+        }
+        const hits = pageAreas
+          .filter((area) => polygonIntersectsRect(area.polygon, min, max))
+          .map((area) => area.id)
+        selectAreas(event.shiftKey ? [...selectedAreaIds, ...hits] : hits)
+      } else if (!drag.moved) {
+        selectArea(null)
+      }
+      setMarquee(null)
+    }
     setDrag(null)
+    setSnapHit(null)
     endInteraction()
   }
 
@@ -1503,7 +1674,10 @@ export function PdfStage({
               onPointerMove={onPointerMove}
               onPointerUp={onPointerUp}
               onPointerCancel={onPointerUp}
-              onPointerLeave={() => setHoverPt(null)}
+              onPointerLeave={() => {
+                setHoverPt(null)
+                setSnapHit(null)
+              }}
               onDoubleClick={onDoubleClick}
               onWheel={onWheel}
               onAuxClick={(event) => event.preventDefault()}

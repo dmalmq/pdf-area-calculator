@@ -71,6 +71,14 @@ export type LegendOrientation = 'vertical' | 'horizontal'
 
 export type StoreLabelMode = 'code' | 'number' | 'off'
 
+export interface SnapTargets {
+  endpoints: boolean
+  intersections: boolean
+  lines: boolean
+}
+
+export type SnapTargetKind = keyof SnapTargets
+
 export interface CopiedArea {
   kind: AreaKind
   name: string
@@ -150,7 +158,9 @@ export interface AppState {
   activeName: string | null
   activePageIndex: number
   tool: Tool
-  selectedAreaId: string | null
+  selectedAreaIds: string[] // multi-selection; last element is the primary selection
+  snapEnabled: boolean
+  snapTargets: SnapTargets
   calibrating: boolean
   zoom: number
   pan: Pt

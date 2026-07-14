@@ -1,7 +1,7 @@
 import { useId, useMemo, useState } from 'react'
 
 import { useT } from '../i18n'
-import { areaM2, detailCandidates, mmPerPtFor, useAreaStore } from '../state/store'
+import { areaM2, detailCandidates, mmPerPtFor, primaryAreaId, useAreaStore } from '../state/store'
 import type { DetailCandidate } from '../state/store'
 import { areaNetPt2 } from '../geometry/area'
 import type { Pt } from '../state/types'
@@ -48,7 +48,7 @@ export function InspectorPanel({
   const pages = useAreaStore((s) => s.pages)
   const names = useAreaStore((s) => s.names)
   const areas = useAreaStore((s) => s.areas)
-  const selectedAreaId = useAreaStore((s) => s.selectedAreaId)
+  const selectedAreaId = useAreaStore(primaryAreaId)
   const calibrating = useAreaStore((s) => s.calibrating)
   const setScale = useAreaStore((s) => s.setScale)
   const applyScaleToAll = useAreaStore((s) => s.applyScaleToAll)

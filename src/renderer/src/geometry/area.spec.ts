@@ -6,6 +6,7 @@ import {
   pointInArea,
   pointInPolygon,
   polygonCentroid,
+  polygonIntersectsRect,
   shoelacePt2
 } from './area'
 import { resolveMmPerPt } from './scale'
@@ -80,5 +81,24 @@ describe('geometry helpers', () => {
     expect(pointInArea(area, { x: 10, y: 10 })).toBe(true)
     expect(pointInArea(area, { x: 50, y: 50 })).toBe(false)
     expect(pointInArea(area, { x: 150, y: 50 })).toBe(false)
+  })
+
+  it('detects polygon/rect overlap via edge crossing alone', () => {
+    // Horizontal bar polygon crosses a vertical marquee (plus-sign overlap).
+    // No polygon vertex is inside the rect; no rect corner is inside the poly.
+    const bar = [
+      { x: 0, y: 40 },
+      { x: 100, y: 40 },
+      { x: 100, y: 60 },
+      { x: 0, y: 60 }
+    ]
+    const marqueeMin = { x: 40, y: 0 }
+    const marqueeMax = { x: 60, y: 100 }
+    expect(polygonIntersectsRect(bar, marqueeMin, marqueeMax)).toBe(true)
+  })
+
+  it('returns false for disjoint polygon and rect', () => {
+    expect(polygonIntersectsRect(square, { x: 200, y: 200 }, { x: 250, y: 250 })).toBe(false)
+    expect(polygonIntersectsRect(square.slice(0, 2), { x: 0, y: 0 }, { x: 10, y: 10 })).toBe(false)
   })
 })

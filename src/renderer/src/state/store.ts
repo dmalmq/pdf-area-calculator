@@ -23,6 +23,7 @@ import type {
   Pt,
   ReportRow,
   ScaleMode,
+  SnapTargetKind,
   Tool
 } from './types'
 
@@ -45,6 +46,8 @@ export interface AreaStore extends AppState {
   markProjectSaved(): void
   renameArea(id: string, name: string): void
   selectArea(id: string | null): void
+  selectAreas(ids: string[]): void
+  toggleAreaSelected(id: string): void
   moveVertex(id: string, index: number, pt: Pt): void
   insertVertex(id: string, edgeIndex: number, pt: Pt): void
   removeVertex(id: string, index: number): boolean
@@ -88,7 +91,10 @@ export interface AreaStore extends AppState {
   setAreaKind(id: string, kind: AreaKind): void
   addHole(id: string, ring: Pt[]): void
   removeHole(id: string, holeIndex: number): void
-  setAreaGeometry(id: string, polygon: Pt[], holes?: Pt[][]): void
+  setAreasGeometry(entries: Array<{ id: string; polygon: Pt[]; holes?: Pt[][] }>): void
+  deleteAreas(ids: string[]): void
+  setSnapEnabled(enabled: boolean): void
+  setSnapTarget(kind: SnapTargetKind, enabled: boolean): void
   undo(): void
   redo(): void
   beginInteraction(): void
@@ -108,7 +114,9 @@ const initialState: AppState = {
   activeName: null,
   activePageIndex: 0,
   tool: 'draw',
-  selectedAreaId: null,
+  selectedAreaIds: [],
+  snapEnabled: true,
+  snapTargets: { endpoints: true, intersections: true, lines: true },
   calibrating: false,
   zoom: 1,
   pan: { x: 0, y: 0 },
@@ -202,6 +210,11 @@ export function selectIsDirty(state: AppState): boolean {
 
 export function mmPerPtFor(state: Pick<AppState, 'pages'>, pageIndex: number): number | null {
   return resolveMmPerPt(state.pages.find((p) => p.pageIndex === pageIndex)?.scale ?? null)
+}
+
+// The primary selection: the most recently selected area (Inspector, vertex editing).
+export function primaryAreaId(state: Pick<AppState, 'selectedAreaIds'>): string | null {
+  return state.selectedAreaIds[state.selectedAreaIds.length - 1] ?? null
 }
 
 export function areaM2(state: Pick<AppState, 'pages'>, area: Area): number | null {
@@ -627,7 +640,7 @@ export function createAreaStore(initial?: Partial<AppState>): StoreApi<AreaStore
         activeName: null,
         activePageIndex: 0,
         tool: 'draw',
-        selectedAreaId: null,
+        selectedAreaIds: [],
         calibrating: false,
         zoom: 1,
         pan: { x: 0, y: 0 },
@@ -687,7 +700,7 @@ export function createAreaStore(initial?: Partial<AppState>): StoreApi<AreaStore
         areas: [...state.areas, cleanArea],
         names: withName(state.names, cleanArea.name),
         colors: withNameColor(state.colors, cleanArea.name),
-        selectedAreaId: cleanArea.id,
+        selectedAreaIds: [cleanArea.id],
         tool: 'draw'
       }))
     },
@@ -699,7 +712,28 @@ export function createAreaStore(initial?: Partial<AppState>): StoreApi<AreaStore
         return {
           areas,
           detailPages,
-          selectedAreaId: state.selectedAreaId === id ? null : state.selectedAreaId,
+          selectedAreaIds: state.selectedAreaIds.filter((sid) => sid !== id),
+          ...reconcileDetailEditor(
+            state.detailEditing,
+            detailPages,
+            areas,
+            state.pages,
+            state.activePageIndex
+          )
+        }
+      })
+    },
+
+    deleteAreas(ids) {
+      const drop = new Set(ids)
+      set((state) => {
+        const areas = state.areas.filter((candidate) => !drop.has(candidate.id))
+        if (areas.length === state.areas.length) return {}
+        const detailPages = pruneDetailPages({ areas, detailPages: state.detailPages })
+        return {
+          areas,
+          detailPages,
+          selectedAreaIds: state.selectedAreaIds.filter((sid) => !drop.has(sid)),
           ...reconcileDetailEditor(
             state.detailEditing,
             detailPages,
@@ -751,7 +785,7 @@ export function createAreaStore(initial?: Partial<AppState>): StoreApi<AreaStore
       set({
         detailEditing: { name, pageIndex },
         activePageIndex: displayIndex,
-        selectedAreaId: null
+        selectedAreaIds: []
       })
     },
     closeDetailEditor() {
@@ -828,7 +862,19 @@ export function createAreaStore(initial?: Partial<AppState>): StoreApi<AreaStore
     },
 
     selectArea(id) {
-      set({ selectedAreaId: id })
+      set({ selectedAreaIds: id == null ? [] : [id] })
+    },
+
+    selectAreas(ids) {
+      set({ selectedAreaIds: [...new Set(ids)] })
+    },
+
+    toggleAreaSelected(id) {
+      set((state) => ({
+        selectedAreaIds: state.selectedAreaIds.includes(id)
+          ? state.selectedAreaIds.filter((sid) => sid !== id)
+          : [...state.selectedAreaIds, id]
+      }))
     },
 
     moveVertex(id, index, pt) {
@@ -871,7 +917,7 @@ export function createAreaStore(initial?: Partial<AppState>): StoreApi<AreaStore
       const max = Math.max(0, get().pages.length - 1)
       set({
         activePageIndex: Math.min(Math.max(i, 0), max),
-        selectedAreaId: null,
+        selectedAreaIds: [],
         pan: { x: 0, y: 0 }
       })
     },
@@ -911,15 +957,15 @@ export function createAreaStore(initial?: Partial<AppState>): StoreApi<AreaStore
             )
       const areas = state.areas.filter((area) => area.pageIndex !== sourceIndex)
       const detailPages = pruneDetailPages({ areas, detailPages: state.detailPages })
-      const selectedAreaId = areas.some((area) => area.id === state.selectedAreaId)
-        ? state.selectedAreaId
-        : null
+      const selectedAreaIds = state.selectedAreaIds.filter((sid) =>
+        areas.some((area) => area.id === sid)
+      )
       set({
         pages,
         areas,
         detailPages,
         activePageIndex,
-        selectedAreaId,
+        selectedAreaIds,
         ...reconcileDetailEditor(state.detailEditing, detailPages, areas, pages, activePageIndex)
       })
     },
@@ -943,6 +989,14 @@ export function createAreaStore(initial?: Partial<AppState>): StoreApi<AreaStore
 
     setTagsVisible(visible) {
       set({ tagsVisible: visible })
+    },
+
+    setSnapEnabled(enabled) {
+      set({ snapEnabled: enabled })
+    },
+
+    setSnapTarget(kind, enabled) {
+      set((state) => ({ snapTargets: { ...state.snapTargets, [kind]: enabled } }))
     },
 
     importProject(project) {
@@ -973,7 +1027,7 @@ export function createAreaStore(initial?: Partial<AppState>): StoreApi<AreaStore
         detailPages: (project.detailPages ?? []).map((dp) => ({ ...dp })),
         detailEditing: null,
         activeName: project.names[0] ?? null,
-        selectedAreaId: null,
+        selectedAreaIds: [],
         activePageIndex: 0,
         tool: 'draw',
         undoStack: [],
@@ -985,17 +1039,18 @@ export function createAreaStore(initial?: Partial<AppState>): StoreApi<AreaStore
 
     copySelectedArea() {
       const state = get()
-      const area = state.areas.find((candidate) => candidate.id === state.selectedAreaId)
-      if (!area) return 0
-      const copied: CopiedArea = {
+      const selected = new Set(state.selectedAreaIds)
+      const chosen = state.areas.filter((area) => selected.has(area.id))
+      if (chosen.length === 0) return 0
+      const copied: CopiedArea[] = chosen.map((area) => ({
         kind: area.kind,
         name: area.name,
         code: area.code,
         polygon: clonePolygon(area.polygon),
         holes: cloneHoles(area.holes)
-      }
-      set({ clipboard: [copied] })
-      return 1
+      }))
+      set({ clipboard: copied })
+      return copied.length
     },
 
     copyActivePage() {
@@ -1054,7 +1109,7 @@ export function createAreaStore(initial?: Partial<AppState>): StoreApi<AreaStore
         areas: [...state.areas, ...pasted],
         names,
         colors,
-        selectedAreaId: pasted[pasted.length - 1].id
+        selectedAreaIds: pasted.map((area) => area.id)
       })
       return pasted.length
     },
@@ -1064,11 +1119,15 @@ export function createAreaStore(initial?: Partial<AppState>): StoreApi<AreaStore
         areas: state.areas.map((area) => (area.id === id ? { ...area, polygon } : area))
       }))
     },
-    setAreaGeometry(id, polygon, holes) {
+
+    setAreasGeometry(entries) {
+      if (entries.length === 0) return
+      const byId = new Map(entries.map((entry) => [entry.id, entry]))
       set((state) => ({
-        areas: state.areas.map((area) =>
-          area.id === id ? { ...area, polygon, holes: holes ?? area.holes } : area
-        )
+        areas: state.areas.map((area) => {
+          const entry = byId.get(area.id)
+          return entry ? { ...area, polygon: entry.polygon, holes: entry.holes ?? area.holes } : area
+        })
       }))
     },
     setAreaKind(id, kind) {
@@ -1128,9 +1187,9 @@ export function createAreaStore(initial?: Partial<AppState>): StoreApi<AreaStore
         return {
           activePageIndex:
             idx >= 0 ? idx : Math.max(0, Math.min(st.activePageIndex, st.pages.length - 1)),
-          selectedAreaId: st.areas.some((area) => area.id === st.selectedAreaId)
-            ? st.selectedAreaId
-            : null,
+          selectedAreaIds: st.selectedAreaIds.filter((sid) =>
+            st.areas.some((area) => area.id === sid)
+          ),
           ...reconcileDetailEditor(
             st.detailEditing,
             st.detailPages,
@@ -1159,9 +1218,9 @@ export function createAreaStore(initial?: Partial<AppState>): StoreApi<AreaStore
         return {
           activePageIndex:
             idx >= 0 ? idx : Math.max(0, Math.min(st.activePageIndex, st.pages.length - 1)),
-          selectedAreaId: st.areas.some((area) => area.id === st.selectedAreaId)
-            ? st.selectedAreaId
-            : null,
+          selectedAreaIds: st.selectedAreaIds.filter((sid) =>
+            st.areas.some((area) => area.id === sid)
+          ),
           ...reconcileDetailEditor(
             st.detailEditing,
             st.detailPages,

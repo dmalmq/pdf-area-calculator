@@ -167,7 +167,7 @@ export function Sidebar({ onCopyAll, onPaste }: SidebarProps): React.JSX.Element
                 return (
                   <div
                     key={area.id}
-                    className={state.selectedAreaId === area.id ? 'row row--selected' : 'row'}
+                    className={state.selectedAreaIds.includes(area.id) ? 'row row--selected' : 'row'}
                   >
                     <button
                       type="button"

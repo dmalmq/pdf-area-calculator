@@ -3,7 +3,7 @@ import { useStore } from 'zustand'
 
 import { localeStore, useT } from '../i18n'
 import { selectIsDirty, useAreaStore } from '../state/store'
-import type { BusyAction, Tool } from '../state/types'
+import type { BusyAction, SnapTargetKind, Tool } from '../state/types'
 
 interface ToolbarProps {
   onOpenPdf: () => void
@@ -52,6 +52,10 @@ export function Toolbar({
   const setDrawKind = useAreaStore((s) => s.setDrawKind)
   const tagsVisible = useAreaStore((s) => s.tagsVisible)
   const setTagsVisible = useAreaStore((s) => s.setTagsVisible)
+  const snapEnabled = useAreaStore((s) => s.snapEnabled)
+  const snapTargets = useAreaStore((s) => s.snapTargets)
+  const setSnapEnabled = useAreaStore((s) => s.setSnapEnabled)
+  const setSnapTarget = useAreaStore((s) => s.setSnapTarget)
 
   const runFromMenu = (action: () => void): void => {
     if (menuRef.current) menuRef.current.open = false
@@ -201,6 +205,34 @@ export function Toolbar({
           </div>
         </div>
       ) : null}
+
+      <div className="topbar__group">
+        <details className="menu">
+          <summary>{t('snap.label')}</summary>
+          <div className="menu__list menu__list--checks">
+            <label className="menu__check">
+              <input
+                type="checkbox"
+                checked={snapEnabled}
+                onChange={(event) => setSnapEnabled(event.target.checked)}
+              />
+              {t('snap.enable')}
+            </label>
+            {(['endpoints', 'intersections', 'lines'] as SnapTargetKind[]).map((kind) => (
+              <label key={kind} className="menu__check">
+                <input
+                  type="checkbox"
+                  checked={snapTargets[kind]}
+                  disabled={!snapEnabled}
+                  onChange={(event) => setSnapTarget(kind, event.target.checked)}
+                />
+                {t(`snap.${kind}`)}
+              </label>
+            ))}
+            <small className="menu__hint">{t('snap.altHint')}</small>
+          </div>
+        </details>
+      </div>
 
       <div className="topbar__group topbar__group--end">
         <div className="segmented" role="group" aria-label={t('lang.label')}>

@@ -8,6 +8,7 @@ import {
   facilitiesOnPage,
   nextStoreCode,
   orderedDetailPages,
+  primaryAreaId,
   reportByFacility,
   reportByFacilityLevel,
   reportByLevel,
@@ -62,7 +63,7 @@ describe('area store', () => {
   })
 
   it('keeps vertex edits valid and refuses to remove the third vertex', () => {
-    const store = createAreaStore({ pages, areas: [square(0, 'A')], selectedAreaId: null })
+    const store = createAreaStore({ pages, areas: [square(0, 'A')], selectedAreaIds: [] })
     const areaId = store.getState().areas[0].id
 
     store.getState().moveVertex(areaId, 0, { x: 1, y: 2 })
@@ -92,7 +93,12 @@ describe('area store', () => {
 
   it('reassigns areas, updates names, and clears selected deleted areas', () => {
     const area = square(0, 'A')
-    const store = createAreaStore({ pages, names: ['A'], areas: [area], selectedAreaId: area.id })
+    const store = createAreaStore({
+      pages,
+      names: ['A'],
+      areas: [area],
+      selectedAreaIds: [area.id]
+    })
 
     store.getState().renameArea(area.id, ' B ')
     expect(store.getState().areas[0].name).toBe('B')
@@ -100,7 +106,7 @@ describe('area store', () => {
 
     store.getState().deleteArea(area.id)
     expect(store.getState().areas).toEqual([])
-    expect(store.getState().selectedAreaId).toBeNull()
+    expect(store.getState().selectedAreaIds).toEqual([])
   })
 
   it('imports explicit project state without original PDF bytes', () => {
@@ -153,7 +159,12 @@ describe('area store', () => {
 
   it('copies the selected area and nothing when no selection', () => {
     const a = square(0, 'A')
-    const store = createAreaStore({ pages, names: ['A'], areas: [a], selectedAreaId: a.id })
+    const store = createAreaStore({
+      pages,
+      names: ['A'],
+      areas: [a],
+      selectedAreaIds: [a.id]
+    })
 
     expect(store.getState().copySelectedArea()).toBe(1)
     expect(store.getState().clipboard).toEqual([
@@ -182,7 +193,12 @@ describe('area store', () => {
 
   it('pastes clipboard areas onto the active page with fresh ids and selection', () => {
     const a = square(0, 'A')
-    const store = createAreaStore({ pages, names: ['A'], areas: [a], selectedAreaId: a.id })
+    const store = createAreaStore({
+      pages,
+      names: ['A'],
+      areas: [a],
+      selectedAreaIds: [a.id]
+    })
     store.getState().copySelectedArea()
 
     store.getState().setActivePage(1)
@@ -192,7 +208,7 @@ describe('area store', () => {
     expect(pasted).toBeTruthy()
     expect(pasted!.id).not.toBe(a.id)
     expect(pasted!.polygon).toEqual(a.polygon)
-    expect(store.getState().selectedAreaId).toBe(pasted!.id)
+    expect(store.getState().selectedAreaIds).toEqual([pasted!.id])
 
     // pasted polygon is an independent clone
     store.getState().setAreaPolygon(pasted!.id, [
@@ -668,7 +684,7 @@ describe('area store', () => {
     expect(selectIsDirty(store.getState())).toBe(true)
     expect(store.getState().tool).toBe('edit')
     expect(store.getState().zoom).toBe(2)
-    expect(store.getState().selectedAreaId).toBe(area.id)
+    expect(store.getState().selectedAreaIds).toEqual([area.id])
 
     store.getState().markProjectSaved()
     expect(selectIsDirty(store.getState())).toBe(false)
@@ -687,15 +703,79 @@ describe('area store', () => {
       pages,
       names: ['A', 'B', 'C'],
       areas: [a, b, c],
-      selectedAreaId: b.id
+      selectedAreaIds: [b.id]
     })
 
     store.getState().deleteArea(b.id)
     expect(store.getState().areas).toEqual([a, c])
-    expect(store.getState().selectedAreaId).toBeNull()
+    expect(store.getState().selectedAreaIds).toEqual([])
 
     store.getState().deleteArea('missing')
     expect(store.getState().areas).toEqual([a, c])
+  })
+
+  it('selectAreas/toggleAreaSelected manage the multi-selection with a stable primary', () => {
+    const a = square(0, 'A')
+    const b = square(0, 'B')
+    const store = createAreaStore({ pages, names: ['A', 'B'], areas: [a, b] })
+
+    store.getState().selectAreas([a.id, b.id, a.id])
+    expect(store.getState().selectedAreaIds).toEqual([a.id, b.id])
+    expect(primaryAreaId(store.getState())).toBe(b.id)
+
+    store.getState().toggleAreaSelected(b.id)
+    expect(store.getState().selectedAreaIds).toEqual([a.id])
+    store.getState().toggleAreaSelected(b.id)
+    expect(store.getState().selectedAreaIds).toEqual([a.id, b.id])
+
+    store.getState().selectArea(a.id)
+    expect(store.getState().selectedAreaIds).toEqual([a.id])
+    store.getState().selectArea(null)
+    expect(store.getState().selectedAreaIds).toEqual([])
+    expect(primaryAreaId(store.getState())).toBeNull()
+  })
+
+  it('deleteAreas removes every id, keeps the rest selected, and copySelectedArea copies all', () => {
+    const a = square(0, 'A')
+    const b = square(0, 'B')
+    const c = square(0, 'C')
+    const store = createAreaStore({
+      pages,
+      names: ['A', 'B', 'C'],
+      areas: [a, b, c],
+      selectedAreaIds: [a.id, b.id, c.id]
+    })
+
+    expect(store.getState().copySelectedArea()).toBe(3)
+    expect(store.getState().clipboard.map((copied) => copied.name)).toEqual(['A', 'B', 'C'])
+
+    store.getState().deleteAreas([a.id, b.id])
+    expect(store.getState().areas).toEqual([c])
+    expect(store.getState().selectedAreaIds).toEqual([c.id])
+
+    store.getState().deleteAreas(['missing'])
+    expect(store.getState().areas).toEqual([c])
+  })
+
+  it('setAreasGeometry updates several areas in one step, preserving untouched holes', () => {
+    const a = square(0, 'A')
+    const b = { ...square(0, 'B'), holes: [[{ x: 1, y: 1 }, { x: 2, y: 1 }, { x: 2, y: 2 }]] }
+    const store = createAreaStore({ pages, names: ['A', 'B'], areas: [a, b] })
+    const shift = (poly: { x: number; y: number }[]): { x: number; y: number }[] =>
+      poly.map((pt) => ({ x: pt.x + 5, y: pt.y + 5 }))
+
+    store.getState().setAreasGeometry([
+      { id: a.id, polygon: shift(a.polygon) },
+      { id: b.id, polygon: shift(b.polygon), holes: b.holes.map(shift) }
+    ])
+
+    const [movedA, movedB] = store.getState().areas
+    expect(movedA.polygon[0]).toEqual({ x: 5, y: 5 })
+    expect(movedB.polygon[0]).toEqual({ x: 5, y: 5 })
+    expect(movedB.holes?.[0][0]).toEqual({ x: 6, y: 6 })
+
+    store.getState().setAreasGeometry([{ id: b.id, polygon: b.polygon }])
+    expect(store.getState().areas[1].holes).toEqual(b.holes.map(shift))
   })
 
   it('renumberStoreCodes orders stores per facility by page, then top-to-bottom, left-to-right', () => {
@@ -1293,13 +1373,13 @@ describe('detail editor and image actions', () => {
       pages,
       names: ['A'],
       areas: [area],
-      selectedAreaId: area.id,
+      selectedAreaIds: [area.id],
       detailPages: [{ name: 'A', pageIndex: 1 }]
     })
     store.getState().openDetailEditor('A', 1)
     expect(store.getState().detailEditing).toEqual({ name: 'A', pageIndex: 1 })
     expect(store.getState().activePageIndex).toBe(1)
-    expect(store.getState().selectedAreaId).toBeNull()
+    expect(store.getState().selectedAreaIds).toEqual([])
   })
 
   it('resolves a stable source page index to the reordered display cursor', () => {
