@@ -668,7 +668,9 @@ export function PdfStage({
       ctx.fill('evenodd')
       ctx.restore()
       ctx.strokeStyle = color
-      ctx.lineWidth = selected ? 3 : 1.5
+      // Overlay canvas is CSS-scaled by zoom; divide so the outline keeps a constant
+      // on-screen thickness instead of ballooning when zoomed in.
+      ctx.lineWidth = (selected ? 3 : 1.5) / zoom
       ctx.stroke()
 
       const rect = drawTag && tagsVisible ? tagRect(area, ctx, viewport, state) : null
@@ -769,13 +771,13 @@ export function PdfStage({
       ctx.moveTo(pts[0].x, pts[0].y)
       pts.slice(1).forEach((pt) => ctx.lineTo(pt.x, pt.y))
       ctx.strokeStyle = holeTarget ? '#dc2626' : '#111827'
-      ctx.lineWidth = 2
-      ctx.setLineDash([6, 5])
+      ctx.lineWidth = 2 / zoom
+      ctx.setLineDash([6 / zoom, 5 / zoom])
       ctx.stroke()
       ctx.setLineDash([])
       pts.forEach((pt, index) => {
         ctx.beginPath()
-        ctx.arc(pt.x, pt.y, index === 0 ? 5 : 4, 0, Math.PI * 2)
+        ctx.arc(pt.x, pt.y, (index === 0 ? 5 : 4) / zoom, 0, Math.PI * 2)
         ctx.fillStyle = index === 0 ? '#16a34a' : '#111827'
         ctx.fill()
       })
@@ -789,7 +791,7 @@ export function PdfStage({
       ctx.moveTo(pts[0].x, pts[0].y)
       pts.slice(1).forEach((pt) => ctx.lineTo(pt.x, pt.y))
       ctx.strokeStyle = '#dc2626'
-      ctx.lineWidth = 2
+      ctx.lineWidth = 2 / zoom
       ctx.stroke()
     }
 
@@ -802,8 +804,8 @@ export function PdfStage({
       ctx.fillStyle = 'rgba(37, 99, 235, 0.08)'
       ctx.fillRect(x, y, Math.abs(a.x - b.x), Math.abs(a.y - b.y))
       ctx.strokeStyle = '#2563eb'
-      ctx.lineWidth = 1.5
-      ctx.setLineDash([5, 4])
+      ctx.lineWidth = 1.5 / zoom
+      ctx.setLineDash([5 / zoom, 4 / zoom])
       ctx.strokeRect(x, y, Math.abs(a.x - b.x), Math.abs(a.y - b.y))
       ctx.restore()
     }
