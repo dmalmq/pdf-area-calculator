@@ -281,6 +281,7 @@ export function PdfStage({
   const setDetailImage = useAreaStore((s) => s.setDetailImage)
   const setDetailTransform = useAreaStore((s) => s.setDetailTransform)
   const setDetailSummaryPosition = useAreaStore((s) => s.setDetailSummaryPosition)
+  const setDetailLocked = useAreaStore((s) => s.setDetailLocked)
   const [viewport, setViewport] = useState<PageViewport | null>(null)
   const [draft, setDraft] = useState<Pt[]>([])
   const [hoverPt, setHoverPt] = useState<Pt | null>(null)
@@ -811,22 +812,25 @@ export function PdfStage({
       // Marker shape encodes the snap kind: square = endpoint, × = intersection,
       // diamond = nearest point on a line.
       const p = viewportPt(viewport, snapHit.pt)
+      // Constant on-screen size: the overlay canvas is CSS-scaled by zoom.
+      const s = 5 / zoom
+      const d = 6 / zoom
       ctx.save()
       ctx.strokeStyle = '#2563eb'
-      ctx.lineWidth = 2
+      ctx.lineWidth = 2 / zoom
       ctx.beginPath()
       if (snapHit.kind === 'endpoint') {
-        ctx.rect(p.x - 5, p.y - 5, 10, 10)
+        ctx.rect(p.x - s, p.y - s, s * 2, s * 2)
       } else if (snapHit.kind === 'intersection') {
-        ctx.moveTo(p.x - 5, p.y - 5)
-        ctx.lineTo(p.x + 5, p.y + 5)
-        ctx.moveTo(p.x + 5, p.y - 5)
-        ctx.lineTo(p.x - 5, p.y + 5)
+        ctx.moveTo(p.x - s, p.y - s)
+        ctx.lineTo(p.x + s, p.y + s)
+        ctx.moveTo(p.x + s, p.y - s)
+        ctx.lineTo(p.x - s, p.y + s)
       } else {
-        ctx.moveTo(p.x, p.y - 6)
-        ctx.lineTo(p.x + 6, p.y)
-        ctx.lineTo(p.x, p.y + 6)
-        ctx.lineTo(p.x - 6, p.y)
+        ctx.moveTo(p.x, p.y - d)
+        ctx.lineTo(p.x + d, p.y)
+        ctx.lineTo(p.x, p.y + d)
+        ctx.lineTo(p.x - d, p.y)
         ctx.closePath()
       }
       ctx.stroke()
@@ -836,25 +840,29 @@ export function PdfStage({
     if (tool === 'edit' && selectedArea && selectedAreaIds.length === 1) {
       const color = colorForBusiness(state, selectedArea.name)
       const pts = selectedArea.polygon.map((pt) => viewportPt(viewport, pt))
-      ctx.lineWidth = 2
+      // The overlay canvas is CSS-scaled by `zoom`, so divide chrome sizes by zoom to
+      // keep the handles a constant on-screen size regardless of the current zoom.
+      const vHalf = 4 / zoom
+      const mHalf = 3.5 / zoom
+      ctx.lineWidth = 2 / zoom
       pts.forEach((pt, index) => {
         const isSelected =
           selectedVertex?.areaId === selectedArea.id && selectedVertex.index === index
         ctx.fillStyle = isSelected ? color : '#ffffff'
         ctx.strokeStyle = color
-        ctx.fillRect(pt.x - 4, pt.y - 4, 8, 8)
-        ctx.strokeRect(pt.x - 4, pt.y - 4, 8, 8)
+        ctx.fillRect(pt.x - vHalf, pt.y - vHalf, vHalf * 2, vHalf * 2)
+        ctx.strokeRect(pt.x - vHalf, pt.y - vHalf, vHalf * 2, vHalf * 2)
       })
-      ctx.font = `${TAG.weight} ${TAG.font}px ${REPORT_FONT_FAMILY}`
+      ctx.font = `${TAG.weight} ${TAG.font / zoom}px ${REPORT_FONT_FAMILY}`
       ctx.textAlign = 'center'
       ctx.textBaseline = 'middle'
       pts.forEach((pt, index) => {
         const next = pts[(index + 1) % pts.length]
         const mid = { x: (pt.x + next.x) / 2, y: (pt.y + next.y) / 2 }
         ctx.fillStyle = `${color}55`
-        ctx.fillRect(mid.x - 3.5, mid.y - 3.5, 7, 7)
+        ctx.fillRect(mid.x - mHalf, mid.y - mHalf, mHalf * 2, mHalf * 2)
         ctx.fillStyle = '#ffffff'
-        ctx.fillText('+', mid.x, mid.y + 0.5)
+        ctx.fillText('+', mid.x, mid.y + 0.5 / zoom)
       })
     }
   }, [
@@ -883,7 +891,8 @@ export function PdfStage({
     state,
     tagsVisible,
     tool,
-    viewport
+    viewport,
+    zoom
   ])
 
   useEffect(() => {
@@ -1060,7 +1069,9 @@ export function PdfStage({
   const findVertexHit = (viewportPoint: Pt): { areaId: string; index: number } | null => {
     if (!viewport || !selectedArea) return null
     const pts = selectedArea.polygon.map((pt) => viewportPt(viewport, pt))
-    const index = pts.findIndex((pt) => distance(pt, viewportPoint) <= 9)
+    // Tolerance is in canvas units; the canvas is CSS-scaled by zoom, so divide to keep
+    // the hit target a constant on-screen size that matches the drawn handle.
+    const index = pts.findIndex((pt) => distance(pt, viewportPoint) <= 9 / zoom)
     return index === -1 ? null : { areaId: selectedArea.id, index }
   }
 
@@ -1070,7 +1081,7 @@ export function PdfStage({
     for (let i = 0; i < pts.length; i += 1) {
       const next = pts[(i + 1) % pts.length]
       const mid = { x: (pts[i].x + next.x) / 2, y: (pts[i].y + next.y) / 2 }
-      if (distance(mid, viewportPoint) <= 8) {
+      if (distance(mid, viewportPoint) <= 8 / zoom) {
         const a = selectedArea.polygon[i]
         const b = selectedArea.polygon[(i + 1) % selectedArea.polygon.length]
         return { edgeIndex: i, pt: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 } }
@@ -1266,7 +1277,7 @@ export function PdfStage({
       const transform = currentDetail?.transform
       const img = currentDetail?.image ? getDetailImage(currentDetail.image) : null
       let imageHit = false
-      if (img && transform && event.button === 0) {
+      if (img && transform && event.button === 0 && !currentDetail?.locked) {
         const metrics = viewportImageMetrics(
           viewport.transform as ViewportTransform,
           transform.rotation,
@@ -1664,7 +1675,7 @@ export function PdfStage({
   const onWheel = (event: React.WheelEvent<HTMLCanvasElement>): void => {
     const scroll = scrollRef.current
     if (!scroll) return
-    if (detailEditing) {
+    if (detailEditing && !currentDetail?.locked) {
       event.preventDefault()
       if (!currentDetail?.transform || !viewport || !overlayRef.current) return
       const beginBatch = (): void => {
@@ -1903,6 +1914,22 @@ export function PdfStage({
               }}
             >
               {t('detail.removeImage')}
+            </button>
+          ) : null}
+          {currentDetail?.image ? (
+            <button
+              type="button"
+              className={currentDetail.locked ? 'btn btn--primary' : 'btn'}
+              onClick={() => {
+                flushWheelBatch()
+                setDetailLocked(
+                  detailEditing.name,
+                  detailEditing.pageIndex,
+                  !currentDetail.locked
+                )
+              }}
+            >
+              {currentDetail.locked ? t('detail.unlock') : t('detail.lock')}
             </button>
           ) : null}
           <button

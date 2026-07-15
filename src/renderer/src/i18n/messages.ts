@@ -132,7 +132,9 @@ export const messages: Record<Locale, Record<string, string>> = {
     'detail.done': '完了',
     'detail.addImage': '画像を追加…',
     'detail.removeImage': '画像を削除',
-    'detail.hint': 'ドラッグで移動、スクロールで拡大縮小、Shift+スクロールで回転。',
+    'detail.lock': '画像をロック',
+    'detail.unlock': 'ロック解除',
+    'detail.hint': 'ドラッグで移動、スクロールで拡大縮小、Shift+スクロールで回転。ロックすると位置を固定。',
 
     'dialog.renumber.title': '番号を振り直しますか？',
     'dialog.renumber.body':
@@ -354,7 +356,9 @@ export const messages: Record<Locale, Record<string, string>> = {
     'detail.done': 'Done',
     'detail.addImage': 'Add image…',
     'detail.removeImage': 'Remove image',
-    'detail.hint': 'Drag to move · scroll to scale · Shift+scroll to rotate.',
+    'detail.lock': 'Lock image',
+    'detail.unlock': 'Unlock image',
+    'detail.hint': 'Drag to move · scroll to scale · Shift+scroll to rotate · lock to freeze.',
 
     'dialog.renumber.title': 'Renumber stores?',
     'dialog.renumber.body':

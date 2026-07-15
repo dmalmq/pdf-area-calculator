@@ -1093,6 +1093,15 @@ details.disclosure > summary {
   cursor: pointer;
 }
 
+/* Keep the checkbox at its intrinsic size; the global input { width: 100% }
+   rule would otherwise stretch it and collapse the text column. */
+.detail-row__label input[type='checkbox'] {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  min-height: 0;
+}
+
 .detail-row__text {
   display: flex;
   flex: 1;

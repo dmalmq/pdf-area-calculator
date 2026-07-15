@@ -40,6 +40,7 @@ export interface AreaStore extends AppState {
   setDetailImage(name: string, pageIndex: number, image: string, transform: DetailTransform): void
   setDetailTransform(name: string, pageIndex: number, transform: DetailTransform): void
   setDetailSummaryPosition(name: string, pageIndex: number, position: Pt): void
+  setDetailLocked(name: string, pageIndex: number, locked: boolean): void
   removeDetailImage(name: string, pageIndex: number): void
   openDetailEditor(name: string, pageIndex: number): void
   closeDetailEditor(): void
@@ -817,6 +818,15 @@ export function createAreaStore(initial?: Partial<AppState>): StoreApi<AreaStore
         detailPages: state.detailPages.map((detailPage) =>
           detailPage.name === name && detailPage.pageIndex === pageIndex
             ? { ...detailPage, summaryPosition: position }
+            : detailPage
+        )
+      }))
+    },
+    setDetailLocked(name, pageIndex, locked) {
+      set((state) => ({
+        detailPages: state.detailPages.map((detailPage) =>
+          detailPage.name === name && detailPage.pageIndex === pageIndex
+            ? { ...detailPage, locked }
             : detailPage
         )
       }))

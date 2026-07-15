@@ -1157,6 +1157,21 @@ describe('detail pages persistence', () => {
     expect(reopened.getState().detailPages[0].summaryPosition).toEqual({ x: 25, y: 80 })
   })
 
+  it('stores, serializes, and restores the detail image locked flag', () => {
+    const store = createAreaStore({ detailPages: [{ name: 'A', pageIndex: 0 }] })
+    store.getState().setDetailLocked('A', 0, true)
+
+    expect(store.getState().detailPages[0].locked).toBe(true)
+    expect(toProjectFile(store.getState()).detailPages?.[0].locked).toBe(true)
+
+    const reopened = createAreaStore()
+    reopened.getState().importProject(toProjectFile(store.getState()))
+    expect(reopened.getState().detailPages[0].locked).toBe(true)
+
+    store.getState().setDetailLocked('A', 0, false)
+    expect(store.getState().detailPages[0].locked).toBe(false)
+  })
+
   it('undoes one batched summary drag as one history entry', () => {
     const store = createAreaStore({ detailPages: [{ name: 'A', pageIndex: 0 }] })
     store.getState().beginInteraction()

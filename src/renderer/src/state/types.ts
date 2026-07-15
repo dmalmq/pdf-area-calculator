@@ -100,6 +100,7 @@ export interface DetailPage {
   image?: string // PNG, raw base64 (no data: prefix)
   transform?: DetailTransform // absent until an image is placed
   summaryPosition?: Pt // optional top-left of movable summary overlay
+  locked?: boolean // when true, the image can't be moved/scaled/rotated
 }
 
 export interface ProjectFile {
